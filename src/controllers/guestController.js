@@ -270,3 +270,45 @@ export const getAllergiesStats = async (req, res) => {
     });
   }
 };
+export const resetDatabase = async (req, res) => {
+  try {
+    // Importar la función de reseteo
+    const db = (await import("../db.js")).default;
+
+    db.serialize(() => {
+      db.run("DELETE FROM preferences", (err) => {
+        if (err) console.error("Error clearing preferences:", err);
+      });
+
+      db.run("DELETE FROM companions", (err) => {
+        if (err) console.error("Error clearing companions:", err);
+      });
+
+      db.run("DELETE FROM guests", (err) => {
+        if (err) console.error("Error clearing guests:", err);
+      });
+
+      db.run("DELETE FROM sqlite_sequence", (err) => {
+        if (err) console.error("Error resetting IDs:", err);
+      });
+    });
+
+    setTimeout(() => {
+      res.json({
+        success: true,
+        message: "Database reset successfully",
+        data: {
+          tables_cleared: ["guests", "companions", "preferences"],
+          ids_reset: true,
+        },
+      });
+    }, 300);
+  } catch (error) {
+    console.error("Error resetting database:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error resetting database",
+      message: error.message,
+    });
+  }
+};
