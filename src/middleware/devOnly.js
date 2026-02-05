@@ -1,4 +1,4 @@
-import { TypeEnvironment } from "../constants/typeEnviroment";
+import { TypeEnvironment } from "../constants/typeEnvironment.js";
 /**
  * Middleware para proteger endpoints de desarrollo
  */
