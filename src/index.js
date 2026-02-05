@@ -4,9 +4,13 @@ import "dotenv/config";
 import db from "./db.js";
 import guestRoutes from "./routes/guests.js";
 import statsRoutes from "./routes/stats.js";
+import { initializeEmailService } from "./services/emailService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize email service
+initializeEmailService();
 
 // Middleware
 app.use(cors());

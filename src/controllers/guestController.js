@@ -1,4 +1,8 @@
 import * as Guest from "../models/guest.js";
+import {
+  sendNewGuestEmail,
+  sendGuestConfirmationEmail,
+} from "../services/emailService.js";
 
 export const getGuests = async (req, res) => {
   try {
@@ -88,6 +92,14 @@ export const createGuest = async (req, res) => {
       allergies,
       notes,
     });
+
+    // Enviar email al propietario
+    await sendNewGuestEmail(newGuest);
+
+    // Opcionalmente enviar confirmación al invitado
+    if (process.env.SEND_CONFIRMATION_EMAIL === "true") {
+      await sendGuestConfirmationEmail(newGuest);
+    }
 
     res.status(201).json({
       success: true,

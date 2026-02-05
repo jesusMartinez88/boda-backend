@@ -1,9 +1,10 @@
+import { TypeEnvironment } from "../constants/typeEnviroment";
 /**
  * Middleware para proteger endpoints de desarrollo
  */
 
 export const devOnly = (req, res, next) => {
-  if (process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === TypeEnvironment.PRODUCTION) {
     return res.status(403).json({
       success: false,
       error: "Forbidden",

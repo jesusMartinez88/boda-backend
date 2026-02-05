@@ -30,7 +30,7 @@ const initializeTables = () => {
       CREATE TABLE IF NOT EXISTS guests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        email TEXT NOT NULL,
+        email TEXT,
         phone TEXT,
         attending INTEGER DEFAULT 0,
         mealType TEXT DEFAULT 'normal',
