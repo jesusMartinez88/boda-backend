@@ -75,10 +75,11 @@ export const createGuest = async (req, res) => {
     } = req.body;
 
     // Validación básica
-    if (!name || !email) {
+    if (!name) {
+      //email es opcional para permitir registros sin email
       return res.status(400).json({
         success: false,
-        error: "Name and email are required",
+        error: "Name is required",
       });
     }
 
@@ -131,10 +132,11 @@ export const updateGuest = async (req, res) => {
     } = req.body;
 
     // Validación básica
-    if (!name || !email) {
+    if (!name) {
+      //email es opcional para permitir registros sin email
       return res.status(400).json({
         success: false,
-        error: "Name and email are required",
+        error: "Name is are required",
       });
     }
 
