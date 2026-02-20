@@ -2,6 +2,7 @@ import sqlite3 from "sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import bcrypt from "bcryptjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath =
@@ -83,6 +84,43 @@ const initializeTables = () => {
       (err) => {
         if (err) console.error("Error creating preferences table:", err);
         else console.log("Preferences table ready");
+      },
+    );
+
+    // Tabla de usuarios (para el panel de control/stats)
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `,
+      (err) => {
+        if (err) {
+          console.error("Error creating users table:", err);
+        } else {
+          console.log("Users table ready");
+          // Crear usuario por defecto si no existe
+          const username = process.env.ADMIN_USERNAME || "admin";
+          const password = process.env.ADMIN_PASSWORD || "boda2026";
+          
+          db.get("SELECT id FROM users WHERE username = ?", [username], (err, row) => {
+            if (!row) {
+              const hashedPassword = bcrypt.hashSync(password, 10);
+              db.run(
+                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+                [username, hashedPassword, "admin"],
+                (err) => {
+                  if (err) console.error("Error creating default user:", err);
+                  else console.log(`Default user '${username}' created`);
+                }
+              );
+            }
+          });
+        }
       },
     );
   });

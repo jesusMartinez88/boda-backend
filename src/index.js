@@ -4,6 +4,7 @@ import "dotenv/config";
 import db from "./db.js";
 import guestRoutes from "./routes/guests.js";
 import statsRoutes from "./routes/stats.js";
+import authRoutes from "./routes/auth.js";
 import { initializeEmailService } from "./services/emailService.js";
 
 const app = express();
@@ -29,6 +30,7 @@ app.get("/health", (req, res) => {
 });
 
 // API Routes
+app.use("/api/auth", authRoutes);
 app.use("/api/guests", guestRoutes);
 app.use("/api/stats", statsRoutes);
 
