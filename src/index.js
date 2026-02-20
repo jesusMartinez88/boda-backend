@@ -12,8 +12,14 @@ const PORT = process.env.PORT || 3000;
 // Initialize email service
 initializeEmailService();
 
+const corsOptions = {
+  origin: process.env.ORIGIN_URL || "http://localhost:4200",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
