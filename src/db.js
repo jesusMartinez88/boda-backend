@@ -38,13 +38,69 @@ const initializeTables = () => {
         needsTransport INTEGER DEFAULT 0,
         allergies TEXT,
         notes TEXT,
+        tableId INTEGER,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `,
       (err) => {
         if (err) console.error("Error creating guests table:", err);
-        else console.log("Guests table ready");
+        else {
+          console.log("Guests table ready");
+          // Asegurar que la columna tableId existe (para actualizaciones de DB)
+          db.all("PRAGMA table_info(guests)", (err, columns) => {
+            if (!err) {
+              const hasTableId = columns.some(col => col.name === "tableId");
+              const hasTableName = columns.some(col => col.name === "tableName");
+              
+              if (!hasTableId && hasTableName) {
+                // Migración de tableName a tableId (el contenido se perderá si eran nombres, 
+                // pero si eran IDs guardados como texto se mantendrán)
+                db.run("ALTER TABLE guests RENAME COLUMN tableName TO tableId");
+              } else if (!hasTableId) {
+                db.run("ALTER TABLE guests ADD COLUMN tableId INTEGER");
+              }
+            }
+          });
+        }
+      },
+    );
+
+    // ... (settings table remains unchanged) ...
+
+    // Tabla de mesas (UPDATED)
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS tables (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        capacity INTEGER, -- Si es NULL, usa el global max_guests_per_table
+        shape TEXT DEFAULT 'round', -- 'round' o 'square'
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `,
+      (err) => {
+        if (err) console.error("Error creating tables table:", err);
+        else {
+          console.log("Tables table ready");
+          // Migración si el nombre de la columna era 'number'
+          db.all("PRAGMA table_info(tables)", (err, columns) => {
+            if (!err) {
+              const hasName = columns.some(col => col.name === "name");
+              const hasNumber = columns.some(col => col.name === "number");
+              if (!hasName && hasNumber) {
+                db.serialize(() => {
+                  db.run("ALTER TABLE tables RENAME COLUMN number TO name");
+                  // Convertir números a string tipo "Mesa X" si el usuario quiere, 
+                  // pero por ahora solo cambiamos el tipo y nombre de columna.
+                  db.run("UPDATE tables SET name = CAST(name AS TEXT)");
+                  console.log("Renamed tables.number to tables.name and cast to TEXT");
+                });
+              }
+            }
+          });
+        }
       },
     );
 
@@ -105,10 +161,14 @@ const initializeTables = () => {
           console.log("Users table ready");
           // Crear usuario por defecto si no existe
           const username = process.env.ADMIN_USERNAME || "admin";
-          const password = process.env.ADMIN_PASSWORD || "boda2026";
+          const password = process.env.ADMIN_PASSWORD;
           
+          if (!password && !process.env.ADMIN_PASSWORD) {
+            console.error("FATAL: ADMIN_PASSWORD environment variable is NOT set.");
+          }
+
           db.get("SELECT id FROM users WHERE username = ?", [username], (err, row) => {
-            if (!row) {
+            if (!row && password) {
               const hashedPassword = bcrypt.hashSync(password, 10);
               db.run(
                 "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -118,6 +178,8 @@ const initializeTables = () => {
                   else console.log(`Default user '${username}' created`);
                 }
               );
+            } else if (!row && !password) {
+              console.error("Skipping default user creation because ADMIN_PASSWORD is missing.");
             }
           });
         }

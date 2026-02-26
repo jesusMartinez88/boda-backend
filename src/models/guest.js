@@ -55,12 +55,13 @@ export const createGuest = async (guestData) => {
     needsTransport,
     allergies,
     notes,
+    tableId,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         email,
@@ -70,6 +71,7 @@ export const createGuest = async (guestData) => {
         needsTransport ? 1 : 0,
         allergies,
         notes,
+        tableId || null,
       ],
       function (err) {
         if (err) reject(err);
@@ -91,11 +93,12 @@ export const updateGuest = async (id, guestData) => {
     needsTransport,
     allergies,
     notes,
+    tableId,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, updatedAt = CURRENT_TIMESTAMP
+      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
         name,
@@ -106,6 +109,7 @@ export const updateGuest = async (id, guestData) => {
         needsTransport ? 1 : 0,
         allergies,
         notes,
+        tableId !== undefined ? tableId : null,
         id,
       ],
       function (err) {
@@ -114,6 +118,43 @@ export const updateGuest = async (id, guestData) => {
           resolve({ id, ...guestData });
         }
       },
+    );
+  });
+};
+
+export const patchGuest = async (id, partialData) => {
+  // Whitelist de campos permitidos para actualización parcial
+  const allowedFields = [
+    "name", "email", "phone", "attending", "mealType", 
+    "needsTransport", "allergies", "notes", "tableId"
+  ];
+
+  const fields = Object.keys(partialData).filter(field => allowedFields.includes(field));
+  if (fields.length === 0) return await getGuestById(id);
+
+  const setClause = fields
+    .map((field) => `${field} = ?`)
+    .join(", ");
+  const params = fields.map((field) => {
+    const value = partialData[field];
+    if (field === "attending" || field === "needsTransport") {
+      return value ? 1 : 0;
+    }
+    return value;
+  });
+  params.push(id);
+
+  return new Promise((resolve, reject) => {
+    db.run(
+      `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      params,
+      async function (err) {
+        if (err) reject(err);
+        else {
+          const updated = await getGuestById(id);
+          resolve(updated);
+        }
+      }
     );
   });
 };
@@ -195,6 +236,32 @@ export const getAllergiesStats = async () => {
         if (err) reject(err);
         else resolve(rows || []);
       },
+    );
+  });
+};
+
+export const getUniqueTableIds = async () => {
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT DISTINCT tableId FROM guests WHERE tableId IS NOT NULL",
+      [],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.tableId));
+      }
+    );
+  });
+};
+
+export const unassignGuestsFromTable = async (tableId) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE guests SET tableId = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
+      [tableId],
+      function (err) {
+        if (err) reject(err);
+        else resolve({ tableId, changes: this.changes });
+      }
     );
   });
 };

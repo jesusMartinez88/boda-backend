@@ -2,13 +2,18 @@ import jwt from "jsonwebtoken";
 
 export const authenticateJWT = (req, res, next) => {
   const authHeader = req.headers.authorization;
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    console.warn("WARNING: JWT_SECRET is not defined in environment variables!");
+  }
 
   if (authHeader) {
     const token = authHeader.split(" ")[1];
 
     jwt.verify(
       token,
-      process.env.JWT_SECRET || "wedding-secret-2026",
+      secret || "temporary-dev-secret-replace-me",
       (err, user) => {
         if (err) {
           return res.status(403).json({

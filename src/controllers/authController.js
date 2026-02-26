@@ -23,7 +23,7 @@ export const login = async (req, res) => {
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
-      process.env.JWT_SECRET || "wedding-secret-2026",
+      process.env.JWT_SECRET || "temporary-dev-secret-replace-me",
       { expiresIn: "24h" }
     );
 
