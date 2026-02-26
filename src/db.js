@@ -66,7 +66,21 @@ const initializeTables = () => {
       },
     );
 
-    // ... (settings table remains unchanged) ...
+    // Tabla de configuración
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE NOT NULL,
+        value TEXT,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `,
+      (err) => {
+        if (err) console.error("Error creating settings table:", err);
+        else console.log("Settings table ready");
+      },
+    );
 
     // Tabla de mesas (UPDATED)
     db.run(
