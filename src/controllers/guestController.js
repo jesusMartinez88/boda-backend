@@ -138,8 +138,9 @@ export const createGuest = async (req, res) => {
       });
     }
 
+    const finalChildren = req.body.childrens !== undefined ? req.body.childrens : children;
     const numAdults = parseInt(adults || "1", 10);
-    const numChildren = parseInt(children || "0", 10);
+    const numChildren = parseInt(finalChildren || "0", 10);
     const totalAttendees = numAdults + numChildren;
     
     // FEATURE: Asignar mesa de grupo
@@ -197,7 +198,7 @@ export const createGuest = async (req, res) => {
     }
 
     // Enviar email al propietario (solo para el principal)
-    await sendNewGuestEmail(mainGuest);
+    await sendNewGuestEmail(mainGuest, numAdults, numChildren);
 
     // Opcionalmente enviar confirmación al invitado
     if (process.env.SEND_CONFIRMATION_EMAIL === "true" && mainGuest.email) {

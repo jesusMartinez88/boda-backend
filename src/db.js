@@ -206,6 +206,26 @@ const initializeTables = () => {
         }
       },
     );
+
+    // Tabla de finanzas (ingresos y gastos)
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS finances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        description TEXT NOT NULL,
+        amount REAL NOT NULL,
+        type TEXT CHECK(type IN ('income', 'expense')) NOT NULL,
+        category TEXT,
+        date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `,
+      (err) => {
+        if (err) console.error("Error creating finances table:", err);
+        else console.log("Finances table ready");
+      },
+    );
   });
 };
 

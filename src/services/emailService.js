@@ -32,7 +32,7 @@ export const initializeEmailService = () => {
 /**
  * Enviar email cuando se crea un nuevo invitado
  */
-export const sendNewGuestEmail = async (guest) => {
+export const sendNewGuestEmail = async (guest, numAdults, numChildren) => {
   if (!emailEnabled || !process.env.SEND_EMAIL_ON_GUEST_CREATE) {
     console.log("Email sending is disabled.");
     return null;
@@ -56,19 +56,27 @@ export const sendNewGuestEmail = async (guest) => {
         </tr>
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;"><strong>Email</strong></td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${guest.email}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">📧${guest.email}</td>
         </tr>
         <tr style="background-color: #f0f0f0;">
           <td style="border: 1px solid #ddd; padding: 8px;"><strong>Teléfono</strong></td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${guest.phone || "No proporcionado"}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">📱${guest.phone || "No proporcionado"}</td>
         </tr>
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;"><strong>Asistencia</strong></td>
           <td style="border: 1px solid #ddd; padding: 8px;">${guest.attending ? "✅ Confirmado" : "❌ Pendiente"}</td>
         </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;"><strong>Adultos</strong></td>
+          <td style="border: 1px solid #ddd; padding: 8px;">🧓${numAdults}</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;"><strong>Niños</strong></td>
+          <td style="border: 1px solid #ddd; padding: 8px;">🚸${numChildren}</td>
+        </tr>
         <tr style="background-color: #f0f0f0;">
           <td style="border: 1px solid #ddd; padding: 8px;"><strong>Tipo de Comida</strong></td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${guest.mealType || "Normal"}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">🥑${guest.mealType || "Normal"}</td>
         </tr>
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;"><strong>Necesita Autobús</strong></td>
