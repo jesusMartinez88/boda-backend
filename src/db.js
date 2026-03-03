@@ -39,6 +39,7 @@ const initializeTables = () => {
         allergies TEXT,
         notes TEXT,
         tableId INTEGER,
+        isAdult INTEGER DEFAULT 1,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -47,18 +48,24 @@ const initializeTables = () => {
         if (err) console.error("Error creating guests table:", err);
         else {
           console.log("Guests table ready");
-          // Asegurar que la columna tableId existe (para actualizaciones de DB)
+          // Asegurar que las columnas necesarias existen (para actualizaciones de DB)
           db.all("PRAGMA table_info(guests)", (err, columns) => {
             if (!err) {
               const hasTableId = columns.some(col => col.name === "tableId");
               const hasTableName = columns.some(col => col.name === "tableName");
+              const hasIsAdult = columns.some(col => col.name === "isAdult");
               
               if (!hasTableId && hasTableName) {
-                // Migración de tableName a tableId (el contenido se perderá si eran nombres, 
-                // pero si eran IDs guardados como texto se mantendrán)
                 db.run("ALTER TABLE guests RENAME COLUMN tableName TO tableId");
               } else if (!hasTableId) {
                 db.run("ALTER TABLE guests ADD COLUMN tableId INTEGER");
+              }
+
+              if (!hasIsAdult) {
+                db.run("ALTER TABLE guests ADD COLUMN isAdult INTEGER DEFAULT 1", (err) => {
+                  if (err) console.error("Error adding isAdult column:", err);
+                  else console.log("Added isAdult column to guests table");
+                });
               }
             }
           });

@@ -56,12 +56,13 @@ export const createGuest = async (guestData) => {
     allergies,
     notes,
     tableId,
+    isAdult,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         email,
@@ -72,6 +73,7 @@ export const createGuest = async (guestData) => {
         allergies,
         notes,
         tableId || null,
+        isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
       ],
       function (err) {
         if (err) reject(err);
@@ -94,11 +96,12 @@ export const updateGuest = async (id, guestData) => {
     allergies,
     notes,
     tableId,
+    isAdult,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, updatedAt = CURRENT_TIMESTAMP
+      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
         name,
@@ -110,6 +113,7 @@ export const updateGuest = async (id, guestData) => {
         allergies,
         notes,
         tableId !== undefined ? tableId : null,
+        isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
         id,
       ],
       function (err) {
@@ -126,7 +130,7 @@ export const patchGuest = async (id, partialData) => {
   // Whitelist de campos permitidos para actualización parcial
   const allowedFields = [
     "name", "email", "phone", "attending", "mealType", 
-    "needsTransport", "allergies", "notes", "tableId"
+    "needsTransport", "allergies", "notes", "tableId", "isAdult"
   ];
 
   const fields = Object.keys(partialData).filter(field => allowedFields.includes(field));
@@ -137,7 +141,7 @@ export const patchGuest = async (id, partialData) => {
     .join(", ");
   const params = fields.map((field) => {
     const value = partialData[field];
-    if (field === "attending" || field === "needsTransport") {
+    if (field === "attending" || field === "needsTransport" || field === "isAdult") {
       return value ? 1 : 0;
     }
     return value;
@@ -177,7 +181,9 @@ export const getGuestStats = async () => {
         COUNT(*) as totalGuests,
         SUM(CASE WHEN attending = 1 THEN 1 ELSE 0 END) as confirmados,
         SUM(CASE WHEN attending = 0 THEN 1 ELSE 0 END) as pendientes,
-        SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport
+        SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
+        SUM(CASE WHEN isAdult = 1 THEN 1 ELSE 0 END) as totalAdults,
+        SUM(CASE WHEN isAdult = 0 THEN 1 ELSE 0 END) as totalChildren
        FROM guests`,
       [],
       (err, row) => {

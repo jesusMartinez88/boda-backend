@@ -122,7 +122,8 @@ export const createGuest = async (req, res) => {
       name,
       email,
       phone,
-      attending,
+      adults,
+      children,
       mealType,
       needsTransport,
       allergies,
@@ -137,14 +138,16 @@ export const createGuest = async (req, res) => {
       });
     }
 
-    const totalAttendees = parseInt(attending || "1", 10);
+    const numAdults = parseInt(adults || "1", 10);
+    const numChildren = parseInt(children || "0", 10);
+    const totalAttendees = numAdults + numChildren;
     
     // FEATURE: Asignar mesa de grupo
     const tableId = await assignRandomTable(totalAttendees);
 
     const createdGuests = [];
 
-    // 1. Crear invitado principal
+    // 1. Crear invitado principal (siempre adulto)
     const mainGuest = await Guest.createGuest({
       name,
       email,
@@ -155,25 +158,42 @@ export const createGuest = async (req, res) => {
       allergies,
       notes,
       tableId,
+      isAdult: true,
     });
     createdGuests.push(mainGuest);
 
-    // 2. Crear acompañantes (si attending > 1)
-    if (totalAttendees > 1) {
-      for (let i = 1; i < totalAttendees; i++) {
-        const companion = await Guest.createGuest({
-          name: `${name} - Acompañante ${i}`,
-          email: null,
-          phone: null,
-          attending: true,
-          mealType: "normal", // Por defecto, el front puede editar después
-          needsTransport: needsTransport || false,
-          allergies: null,
-          notes: `Acompañante de ${name}`,
-          tableId,
-        });
-        createdGuests.push(companion);
-      }
+    // 2. Crear adultos adicionales (si adults > 1)
+    for (let i = 1; i < numAdults; i++) {
+      const adultGuest = await Guest.createGuest({
+        name: `${name} - Acompañante ${i}`,
+        email: null,
+        phone: null,
+        attending: true,
+        mealType: "normal",
+        needsTransport: needsTransport || false,
+        allergies: null,
+        notes: `Acompañante de ${name}`,
+        tableId,
+        isAdult: true,
+      });
+      createdGuests.push(adultGuest);
+    }
+
+    // 3. Crear niños
+    for (let i = 0; i < numChildren; i++) {
+      const childGuest = await Guest.createGuest({
+        name: `${name} - Niño ${i + 1}`,
+        email: null,
+        phone: null,
+        attending: true,
+        mealType: "normal",
+        needsTransport: needsTransport || false,
+        allergies: null,
+        notes: `Niño/a de ${name}`,
+        tableId,
+        isAdult: false,
+      });
+      createdGuests.push(childGuest);
     }
 
     // Enviar email al propietario (solo para el principal)
@@ -188,7 +208,7 @@ export const createGuest = async (req, res) => {
       success: true,
       data: mainGuest,
       allGuests: createdGuests,
-      message: `${totalAttendees} guest(s) created and assigned to table ID ${tableId}`,
+      message: `${totalAttendees} invitado(s) creados (${numAdults} adultos, ${numChildren} niños) asignados a mesa ID ${tableId}`,
     });
   } catch (error) {
     console.error("Error creating guest(s):", error);
@@ -334,6 +354,8 @@ export const getStats = async (req, res) => {
         confirmed: stats.confirmados,
         pending: stats.pendientes,
         needTransport: stats.needTransport,
+        totalAdults: stats.totalAdults || 0,
+        totalChildren: stats.totalChildren || 0,
       },
     });
   } catch (error) {
