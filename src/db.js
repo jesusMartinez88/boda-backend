@@ -89,6 +89,10 @@ const initializeTables = () => {
       },
     );
 
+    // Inicializar configuraciones por defecto
+    db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('total_estimated_guests', '0')");
+    db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_guests_per_table', '10')");
+
     // Tabla de mesas (UPDATED)
     db.run(
       `
