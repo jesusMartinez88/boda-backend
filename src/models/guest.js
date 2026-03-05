@@ -57,12 +57,13 @@ export const createGuest = async (guestData) => {
     notes,
     tableId,
     isAdult,
+    seatNumber,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult, seatNumber)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         email,
@@ -74,6 +75,7 @@ export const createGuest = async (guestData) => {
         notes,
         tableId || null,
         isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
+        seatNumber || null,
       ],
       function (err) {
         if (err) reject(err);
@@ -97,11 +99,12 @@ export const updateGuest = async (id, guestData) => {
     notes,
     tableId,
     isAdult,
+    seatNumber,
   } = guestData;
 
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, updatedAt = CURRENT_TIMESTAMP
+      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, seatNumber = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
         name,
@@ -114,6 +117,7 @@ export const updateGuest = async (id, guestData) => {
         notes,
         tableId !== undefined ? tableId : null,
         isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
+        seatNumber !== undefined ? seatNumber : null,
         id,
       ],
       function (err) {
@@ -130,7 +134,7 @@ export const patchGuest = async (id, partialData) => {
   // Whitelist de campos permitidos para actualización parcial
   const allowedFields = [
     "name", "email", "phone", "attending", "mealType", 
-    "needsTransport", "allergies", "notes", "tableId", "isAdult"
+    "needsTransport", "allergies", "notes", "tableId", "isAdult", "seatNumber"
   ];
 
   const fields = Object.keys(partialData).filter(field => allowedFields.includes(field));

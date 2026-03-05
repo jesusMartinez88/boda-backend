@@ -40,6 +40,7 @@ const initializeTables = () => {
         notes TEXT,
         tableId INTEGER,
         isAdult INTEGER DEFAULT 1,
+        seatNumber INTEGER,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -54,6 +55,7 @@ const initializeTables = () => {
               const hasTableId = columns.some(col => col.name === "tableId");
               const hasTableName = columns.some(col => col.name === "tableName");
               const hasIsAdult = columns.some(col => col.name === "isAdult");
+              const hasSeatNumber = columns.some(col => col.name === "seatNumber");
               
               if (!hasTableId && hasTableName) {
                 db.run("ALTER TABLE guests RENAME COLUMN tableName TO tableId");
@@ -65,6 +67,13 @@ const initializeTables = () => {
                 db.run("ALTER TABLE guests ADD COLUMN isAdult INTEGER DEFAULT 1", (err) => {
                   if (err) console.error("Error adding isAdult column:", err);
                   else console.log("Added isAdult column to guests table");
+                });
+              }
+
+              if (!hasSeatNumber) {
+                db.run("ALTER TABLE guests ADD COLUMN seatNumber INTEGER", (err) => {
+                  if (err) console.error("Error adding seatNumber column:", err);
+                  else console.log("Added seatNumber column to guests table");
                 });
               }
             }

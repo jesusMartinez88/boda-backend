@@ -234,6 +234,7 @@ export const updateGuest = async (req, res) => {
       allergies,
       notes,
       tableId,
+      seatNumber,
     } = req.body;
 
     // Validación básica
@@ -266,6 +267,7 @@ export const updateGuest = async (req, res) => {
       allergies,
       notes,
       tableId: tableId !== undefined ? tableId : null,
+      seatNumber: seatNumber !== undefined ? seatNumber : null,
     });
 
     res.json({
