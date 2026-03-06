@@ -11,6 +11,7 @@ import financeRoutes from "./routes/finances.js";
 import { initializeEmailService } from "./services/emailService.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
+import jwt from "jsonwebtoken";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,7 +25,20 @@ app.use(helmet());
 // Rate Limiting
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: (req, res) => {
+    // Si tiene token válido, 500. Si no, 100.
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      try {
+        const token = authHeader.split(" ")[1];
+        jwt.verify(token, process.env.JWT_SECRET);
+        return 500;
+      } catch (e) {
+        // Token inválido o expirado, lo tratamos como no logueado
+      }
+    }
+    return 100;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: "Too many requests, please try again later." }

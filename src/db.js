@@ -110,6 +110,8 @@ const initializeTables = () => {
         name TEXT UNIQUE NOT NULL,
         capacity INTEGER, -- Si es NULL, usa el global max_guests_per_table
         shape TEXT DEFAULT 'round', -- 'round' o 'square'
+        posX REAL DEFAULT 0,
+        posY REAL DEFAULT 0,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -123,6 +125,9 @@ const initializeTables = () => {
             if (!err) {
               const hasName = columns.some(col => col.name === "name");
               const hasNumber = columns.some(col => col.name === "number");
+              const hasPosX = columns.some(col => col.name === "posX");
+              const hasPosY = columns.some(col => col.name === "posY");
+
               if (!hasName && hasNumber) {
                 db.serialize(() => {
                   db.run("ALTER TABLE tables RENAME COLUMN number TO name");
@@ -130,6 +135,20 @@ const initializeTables = () => {
                   // pero por ahora solo cambiamos el tipo y nombre de columna.
                   db.run("UPDATE tables SET name = CAST(name AS TEXT)");
                   console.log("Renamed tables.number to tables.name and cast to TEXT");
+                });
+              }
+
+              if (!hasPosX) {
+                db.run("ALTER TABLE tables ADD COLUMN posX REAL DEFAULT 0", (err) => {
+                  if (err) console.error("Error adding posX column:", err);
+                  else console.log("Added posX column to tables table");
+                });
+              }
+
+              if (!hasPosY) {
+                db.run("ALTER TABLE tables ADD COLUMN posY REAL DEFAULT 0", (err) => {
+                  if (err) console.error("Error adding posY column:", err);
+                  else console.log("Added posY column to tables table");
                 });
               }
             }

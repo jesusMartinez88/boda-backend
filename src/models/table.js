@@ -54,11 +54,11 @@ export const getTableById = (id) => {
 };
 
 export const createTable = (tableData) => {
-  const { name, capacity, shape } = tableData;
+  const { name, capacity, shape, posX, posY } = tableData;
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO tables (name, capacity, shape) VALUES (?, ?, ?)",
-      [name, capacity, shape || 'round'],
+      "INSERT INTO tables (name, capacity, shape, posX, posY) VALUES (?, ?, ?, ?, ?)",
+      [name, capacity, shape || 'round', posX || 0, posY || 0],
       function (err) {
         if (err) reject(err);
         else resolve({ id: this.lastID, ...tableData });
@@ -68,7 +68,7 @@ export const createTable = (tableData) => {
 };
 
 export const updateTableById = (id, tableData) => {
-  const { name, capacity, shape } = tableData;
+  const { name, capacity, shape, posX, posY } = tableData;
   const fields = [];
   const params = [];
   
@@ -83,6 +83,14 @@ export const updateTableById = (id, tableData) => {
   if (shape !== undefined) {
     fields.push("shape = ?");
     params.push(shape);
+  }
+  if (posX !== undefined) {
+    fields.push("posX = ?");
+    params.push(posX);
+  }
+  if (posY !== undefined) {
+    fields.push("posY = ?");
+    params.push(posY);
   }
   
   if (fields.length === 0) return Promise.resolve({ id, changes: 0 });

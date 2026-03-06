@@ -52,7 +52,7 @@ export const getTable = async (req, res) => {
 
 export const createTable = async (req, res) => {
   try {
-    const { name, capacity, shape } = req.body;
+    const { name, capacity, shape, posX, posY } = req.body;
     
     // Si no se proporciona nombre, generamos uno correlativo "Mesa X"
     let tableName = name;
@@ -63,7 +63,9 @@ export const createTable = async (req, res) => {
     const tableToCreate = {
       name: tableName,
       capacity: capacity || 10,
-      shape: shape || 'round'
+      shape: shape || 'round',
+      posX: posX || 0,
+      posY: posY || 0
     };
 
     const result = await Table.createTable(tableToCreate);
@@ -94,9 +96,9 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, capacity, shape } = req.body;
+    const { name, capacity, shape, posX, posY } = req.body;
 
-    const result = await Table.updateTableById(id, { name, capacity, shape });
+    const result = await Table.updateTableById(id, { name, capacity, shape, posX, posY });
     if (result.changes === 0) {
       return res.status(404).json({
         success: false,
@@ -106,10 +108,19 @@ export const updateTable = async (req, res) => {
 
     res.json({
       success: true,
-      data: mapTableResponse({ id, name, capacity, shape }), // Nota: esto es parcial pero cumple la respuesta
+      data: mapTableResponse({ id, name, capacity, shape, posX, posY }), // Nota: esto es parcial pero cumple la respuesta
     });
   } catch (error) {
     console.error("Error updating table:", error);
+
+    if (error.message && error.message.includes("UNIQUE constraint failed")) {
+      return res.status(409).json({
+        success: false,
+        error: "Duplicate table name",
+        message: "A table with this name already exists.",
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: "Error updating table",
