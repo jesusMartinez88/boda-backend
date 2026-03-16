@@ -10,7 +10,7 @@ router.use(authenticateJWT);
 router.get("/", FinanceController.getFinances);
 router.get("/:id", FinanceController.getFinance);
 router.post("/", FinanceController.createFinance);
-router.put("/:id", FinanceController.updateFinance);
+router.patch("/:id", FinanceController.updateFinance);
 router.delete("/:id", FinanceController.deleteFinance);
 
 export default router;

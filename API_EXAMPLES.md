@@ -58,6 +58,51 @@ curl -X PUT http://localhost:3000/api/guests/1 \
 
 curl -X DELETE http://localhost:3000/api/guests/1
 
+## Agregar ejemplo de solicitud de código para borrado masivo (requiere JWT)
+
+curl -X POST http://localhost:3000/api/guests/request-delete \
+ -H "Authorization: Bearer <TOKEN>"
+
+# (en desarrollo la respuesta JSON también incluye el código)
+
+# luego use el código recibido en el email para la petición DELETE:
+
+curl -X DELETE "http://localhost:3000/api/guests?code=123456" \
+ -H "Authorization: Bearer <TOKEN>"
+
+## Obtener todas las mesas
+
+curl http://localhost:3000/api/tables \
+ -H "Authorization: Bearer <TOKEN>"
+
+## Crear mesa
+
+curl -X POST http://localhost:3000/api/tables \
+ -H "Content-Type: application/json" \
+ -H "Authorization: Bearer <TOKEN>" \
+ -d '{
+"name": "Mesa 1",
+"capacity": 8,
+"shape": "round"
+}'
+
+## Eliminar mesa específica
+
+curl -X DELETE http://localhost:3000/api/tables/1 \
+ -H "Authorization: Bearer <TOKEN>"
+
+## Solicitar código para borrado masivo de mesas (requiere JWT)
+
+curl -X POST http://localhost:3000/api/tables/request-delete \
+ -H "Authorization: Bearer <TOKEN>"
+
+# (en desarrollo la respuesta JSON también incluye el código)
+
+# luego use el código recibido en el email:
+
+curl -X DELETE "http://localhost:3000/api/tables?code=123456" \
+ -H "Authorization: Bearer <TOKEN>"
+
 ## Obtener estadísticas generales
 
 curl http://localhost:3000/api/stats

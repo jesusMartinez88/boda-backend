@@ -66,6 +66,18 @@ data/
 - `POST /api/guests` - Crear nuevo invitado
 - `PUT /api/guests/:id` - Actualizar invitado
 - `DELETE /api/guests/:id` - Eliminar invitado
+- `POST /api/guests/request-delete` - **Solicitar código de confirmación** para borrado masivo; el código llega por email al propietario.
+- `DELETE /api/guests?code=<6 dígitos>` - Eliminar **todos** los invitados con el código válido (autenticado). Reinicia el contador autoincrement.
+
+### Mesas
+
+- `GET /api/tables` - Obtener todas las mesas
+- `GET /api/tables/:id` - Obtener mesa específica
+- `POST /api/tables` - Crear nueva mesa
+- `PATCH /api/tables/:id` - Actualizar mesa
+- `DELETE /api/tables/:id` - Eliminar mesa
+- `POST /api/tables/request-delete` - **Solicitar código de confirmación** para borrado masivo de mesas; el código llega por email al propietario (en desarrollo también se retorna en la respuesta).
+- `DELETE /api/tables?code=<6 dígitos>` - Eliminar **todas** las mesas con el código válido (autenticado). Desasigna los invitados de las mesas y reinicia el contador autoincrement.
 
 ### Estadísticas
 

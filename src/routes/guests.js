@@ -11,6 +11,10 @@ router.post("/", guestController.createGuest);
 
 // Rutas protegidas (requieren login)
 router.use(authenticateJWT);
+// generar y enviar código de borrado masivo por email
+// borrar todos los invitados (se requiere el código enviado por email)
+router.post("/request-delete", guestController.requestDeleteCode);
+router.delete("/", guestController.deleteAllGuests);
 router.put("/:id", guestController.updateGuest);
 router.patch("/:id", guestController.patchGuest);
 router.delete("/:id", guestController.deleteGuest);

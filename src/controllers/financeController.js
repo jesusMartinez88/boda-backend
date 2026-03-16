@@ -44,14 +44,14 @@ export const getFinance = async (req, res) => {
 
 export const createFinance = async (req, res) => {
   try {
-    const { description, amount, type, category, date } = req.body;
+    const { description, amount, type, category, date, paidBy } = req.body;
     if (!description || amount === undefined || !type) {
       return res.status(400).json({
         success: false,
         error: "Description, amount and type are required",
       });
     }
-    const newFinance = await Finance.createFinance({ description, amount, type, category, date });
+    const newFinance = await Finance.createFinance({ description, amount, type, category, date, paidBy });
     res.status(201).json({
       success: true,
       data: newFinance,
@@ -70,7 +70,7 @@ export const createFinance = async (req, res) => {
 export const updateFinance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { description, amount, type, category, date } = req.body;
+    const { description, amount, type, category, date, paidBy } = req.body;
     
     const existing = await Finance.getFinanceById(id);
     if (!existing) {
@@ -86,6 +86,7 @@ export const updateFinance = async (req, res) => {
       type,
       category,
       date: date || existing.date,
+      paidBy,
     });
 
     res.json({

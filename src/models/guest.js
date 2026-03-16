@@ -75,7 +75,7 @@ export const createGuest = async (guestData) => {
         notes,
         tableId || null,
         isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
-        seatNumber || null,
+        seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
       ],
       function (err) {
         if (err) reject(err);
@@ -117,7 +117,7 @@ export const updateGuest = async (id, guestData) => {
         notes,
         tableId !== undefined ? tableId : null,
         isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
-        seatNumber !== undefined ? seatNumber : null,
+        seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
         id,
       ],
       function (err) {
@@ -133,19 +133,32 @@ export const updateGuest = async (id, guestData) => {
 export const patchGuest = async (id, partialData) => {
   // Whitelist de campos permitidos para actualización parcial
   const allowedFields = [
-    "name", "email", "phone", "attending", "mealType", 
-    "needsTransport", "allergies", "notes", "tableId", "isAdult", "seatNumber"
+    "name",
+    "email",
+    "phone",
+    "attending",
+    "mealType",
+    "needsTransport",
+    "allergies",
+    "notes",
+    "tableId",
+    "isAdult",
+    "seatNumber",
   ];
 
-  const fields = Object.keys(partialData).filter(field => allowedFields.includes(field));
+  const fields = Object.keys(partialData).filter((field) =>
+    allowedFields.includes(field),
+  );
   if (fields.length === 0) return await getGuestById(id);
 
-  const setClause = fields
-    .map((field) => `${field} = ?`)
-    .join(", ");
+  const setClause = fields.map((field) => `${field} = ?`).join(", ");
   const params = fields.map((field) => {
     const value = partialData[field];
-    if (field === "attending" || field === "needsTransport" || field === "isAdult") {
+    if (
+      field === "attending" ||
+      field === "needsTransport" ||
+      field === "isAdult"
+    ) {
       return value ? 1 : 0;
     }
     return value;
@@ -162,7 +175,7 @@ export const patchGuest = async (id, partialData) => {
           const updated = await getGuestById(id);
           resolve(updated);
         }
-      }
+      },
     );
   });
 };
@@ -174,6 +187,25 @@ export const deleteGuest = async (id) => {
       else {
         resolve({ deletedId: id, changes: this.changes });
       }
+    });
+  });
+};
+
+// elimina todos los invitados de la tabla y reinicia el contador autoincrement
+export const deleteAllGuests = async () => {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("DELETE FROM guests", function (err) {
+        if (err) return reject(err);
+      });
+      // reset sqlite_sequence for guests so next insert starts at 1
+      db.run(
+        "DELETE FROM sqlite_sequence WHERE name = 'guests'",
+        function (err) {
+          if (err) return reject(err);
+          resolve({ deletedAll: true, resetSeq: true });
+        },
+      );
     });
   });
 };
@@ -257,8 +289,8 @@ export const getUniqueTableIds = async () => {
       [],
       (err, rows) => {
         if (err) reject(err);
-        else resolve(rows.map(r => r.tableId));
-      }
+        else resolve(rows.map((r) => r.tableId));
+      },
     );
   });
 };
@@ -266,12 +298,25 @@ export const getUniqueTableIds = async () => {
 export const unassignGuestsFromTable = async (tableId) => {
   return new Promise((resolve, reject) => {
     db.run(
-      "UPDATE guests SET tableId = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
+      "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
       [tableId],
       function (err) {
         if (err) reject(err);
         else resolve({ tableId, changes: this.changes });
-      }
+      },
+    );
+  });
+};
+
+// desasigna a TODOS los invitados de todas las mesas
+export const unassignAllGuestsFromTables = async () => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId IS NOT NULL",
+      function (err) {
+        if (err) reject(err);
+        else resolve({ changes: this.changes });
+      },
     );
   });
 };

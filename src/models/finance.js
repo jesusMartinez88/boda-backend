@@ -19,11 +19,11 @@ export const getFinanceById = async (id) => {
 };
 
 export const createFinance = async (financeData) => {
-  const { description, amount, type, category, date } = financeData;
+  const { description, amount, type, category, date, paidBy } = financeData;
   return new Promise((resolve, reject) => {
     db.run(
-      `INSERT INTO finances (description, amount, type, category, date) VALUES (?, ?, ?, ?, ?)`,
-      [description, amount, type, category, date || new Date().toISOString()],
+      `INSERT INTO finances (description, amount, type, category, date, paidBy) VALUES (?, ?, ?, ?, ?, ?)`,
+      [description, amount, type, category, date || new Date().toISOString(), paidBy],
       function (err) {
         if (err) reject(err);
         else resolve({ id: this.lastID, ...financeData });
@@ -33,11 +33,11 @@ export const createFinance = async (financeData) => {
 };
 
 export const updateFinance = async (id, financeData) => {
-  const { description, amount, type, category, date } = financeData;
+  const { description, amount, type, category, date, paidBy } = financeData;
   return new Promise((resolve, reject) => {
     db.run(
-      `UPDATE finances SET description = ?, amount = ?, type = ?, category = ?, date = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-      [description, amount, type, category, date, id],
+      `UPDATE finances SET description = ?, amount = ?, type = ?, category = ?, date = ?, paidBy = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [description, amount, type, category, date, paidBy, id],
       function (err) {
         if (err) reject(err);
         else resolve({ id, ...financeData });

@@ -5,9 +5,19 @@ import { promisify } from "util";
 import {
   sendNewGuestEmail,
   sendGuestConfirmationEmail,
+  sendDeleteCodeEmail,
 } from "../services/emailService.js";
+import { table } from "console";
 
 const dbAll = promisify(db.all.bind(db));
+
+// sistema simple de código de confirmación para borrado masivo
+let pendingDeleteCode = null;
+let pendingDeleteExpiry = null;
+
+const generateDeleteCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 const assignRandomTable = async (neededSpace = 1) => {
   try {
@@ -16,29 +26,31 @@ const assignRandomTable = async (neededSpace = 1) => {
     const globalMax = parseInt(globalMaxStr || "10", 10);
 
     // 2. Obtener definiciones de mesas específicas
-    const tableDefinitions = await dbAll("SELECT id, name, capacity FROM tables");
+    const tableDefinitions = await dbAll(
+      "SELECT id, name, capacity FROM tables",
+    );
     const tableInfo = {};
-    tableDefinitions.forEach(t => {
+    tableDefinitions.forEach((t) => {
       tableInfo[t.id] = { name: t.name, capacity: t.capacity || globalMax };
     });
 
     // 3. Obtener ocupación actual de las mesas
     const tableCounts = await dbAll(
-      "SELECT tableId, COUNT(*) as count FROM guests WHERE tableId IS NOT NULL GROUP BY tableId"
+      "SELECT tableId, COUNT(*) as count FROM guests WHERE tableId IS NOT NULL GROUP BY tableId",
     );
 
     // 4. Identificar ocupación
     const currentOccupancy = {};
-    tableCounts.forEach(t => {
+    tableCounts.forEach((t) => {
       currentOccupancy[t.tableId] = t.count;
     });
 
     const availableTableIds = [];
 
-    Object.keys(tableInfo).forEach(id => {
+    Object.keys(tableInfo).forEach((id) => {
       const info = tableInfo[id];
       const occupied = currentOccupancy[id] || 0;
-      if ((info.capacity - occupied) >= neededSpace) {
+      if (info.capacity - occupied >= neededSpace) {
         availableTableIds.push(id);
       }
     });
@@ -56,6 +68,100 @@ const assignRandomTable = async (neededSpace = 1) => {
   } catch (error) {
     console.error("Error in assignRandomTable:", error);
     return null;
+  }
+};
+
+// Asignar una lista de asientos libres dentro de una mesa concreta
+const assignSeatsForTable = async (tableId, neededSeats = 1) => {
+  if (!tableId || neededSeats <= 0) return [];
+
+  try {
+    // 1. Obtener capacidad de la mesa (o usar capacidad global por defecto)
+    const globalMaxStr = await Setting.getSetting("max_guests_per_table");
+    const globalMax = parseInt(globalMaxStr || "10", 10);
+
+    const tableRows = await dbAll("SELECT capacity FROM tables WHERE id = ?", [
+      tableId,
+    ]);
+
+    const tableCapacity =
+      tableRows && tableRows.length > 0
+        ? tableRows[0].capacity || globalMax
+        : globalMax;
+
+    // 2. Obtener asientos ya ocupados en esa mesa
+    const takenSeatRows = await dbAll(
+      "SELECT seatNumber FROM guests WHERE tableId = ? AND seatNumber IS NOT NULL",
+      [tableId],
+    );
+
+    const takenSeats = new Set(
+      takenSeatRows
+        .map((r) => r.seatNumber)
+        .filter((n) => n !== null && n !== undefined),
+    );
+
+    // 3. Calcular asientos libres (1..capacity)
+    const freeSeats = [];
+    for (let i = 1; i <= tableCapacity; i++) {
+      if (!takenSeats.has(i)) {
+        freeSeats.push(i);
+      }
+    }
+
+    if (freeSeats.length < neededSeats) {
+      // No hay suficientes asientos libres para todo el grupo
+      return [];
+    }
+
+    // 4. Devolver los primeros N asientos libres (podríamos aleatorizar si se desea)
+    return freeSeats.slice(0, neededSeats);
+  } catch (error) {
+    console.error("Error in assignSeatsForTable:", error);
+    return [];
+  }
+};
+
+// Validar que una mesa tiene capacidad disponible
+const validateTableCapacity = async (tableId, guestId) => {
+  try {
+    if (!tableId) return { valid: true }; // Sin mesa asignada es válido
+
+    const globalMaxStr = await Setting.getSetting("max_guests_per_table");
+    const globalMax = parseInt(globalMaxStr || "10", 10);
+
+    // Obtener la definición de la mesa
+    const tableDef = await dbAll(
+      "SELECT id, name, capacity FROM tables WHERE id = ?",
+      [tableId],
+    );
+
+    if (!tableDef || tableDef.length === 0) {
+      return { valid: false, error: `Table with ID ${tableId} not found` };
+    }
+
+    const table = tableDef[0];
+    const capacity = table.capacity || globalMax;
+
+    // Obtener ocupación actual (excluyendo el invitado actual)
+    const occupancyResult = await dbAll(
+      "SELECT COUNT(*) as count FROM guests WHERE tableId = ? AND id != ?",
+      [tableId, guestId],
+    );
+
+    const currentCount = occupancyResult[0]?.count || 0;
+
+    if (currentCount >= capacity) {
+      return {
+        valid: false,
+        error: `Table "${table.name}" (ID ${tableId}) is full. Current: ${currentCount}/${capacity}`,
+      };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    console.error("Error validating table capacity:", error);
+    return { valid: false, error: error.message };
   }
 };
 
@@ -124,10 +230,13 @@ export const createGuest = async (req, res) => {
       phone,
       adults,
       children,
+      attendance,
       mealType,
       needsTransport,
       allergies,
       notes,
+      sendEmail,
+      isAdult = true,
     } = req.body;
 
     // Validación básica
@@ -138,78 +247,124 @@ export const createGuest = async (req, res) => {
       });
     }
 
-    const finalChildren = req.body.childrens !== undefined ? req.body.childrens : children;
+    const finalChildren =
+      req.body.childrens !== undefined ? req.body.childrens : children;
     const numAdults = parseInt(adults || "1", 10);
     const numChildren = parseInt(finalChildren || "0", 10);
     const totalAttendees = numAdults + numChildren;
-    
-    // FEATURE: Asignar mesa de grupo
-    const tableId = await assignRandomTable(totalAttendees);
+    const isAttending =
+      attendance !== false &&
+      attendance !== "false" &&
+      attendance !== 0 &&
+      attendance !== "0";
 
+    // FEATURE: Asignar mesa de grupo - respetar setting auto_assign_tables
+    const autoAssignStr = await Setting.getSetting("auto_assign_tables");
+    const autoAssign =
+      autoAssignStr === "true" ||
+      autoAssignStr === "1" ||
+      autoAssignStr === true;
     const createdGuests = [];
 
-    // 1. Crear invitado principal (siempre adulto)
+    let tableId =
+      autoAssign && isAttending
+        ? await assignRandomTable(totalAttendees)
+        : null;
+    let seatNumbers = [];
+
+    // Si hay mesa asignada y el grupo asiste, intentamos asignar asientos
+    if (tableId && isAttending && totalAttendees > 0) {
+      seatNumbers = await assignSeatsForTable(tableId, totalAttendees);
+    }
+    if (!seatNumbers.length) {
+      tableId = null; // Si no se pudieron asignar asientos, no asignamos mesa para evitar inconsistencias
+    }
+
+    const getSeatNumberForIndex = (index) => {
+      if (!seatNumbers || seatNumbers.length === 0) return null;
+      return seatNumbers[index] !== undefined ? seatNumbers[index] : null;
+    };
+
+    // 1. Crear invitado principal
     const mainGuest = await Guest.createGuest({
-      name,
+      name: `${name} ${isAdult ? "" : "- Niño"}`,
       email,
       phone,
-      attending: true,
+      attending: isAttending,
       mealType: mealType || "normal",
       needsTransport: needsTransport || false,
       allergies,
       notes,
       tableId,
-      isAdult: true,
+      seatNumber: getSeatNumberForIndex(0),
+      isAdult: isAdult,
     });
     createdGuests.push(mainGuest);
 
-    // 2. Crear adultos adicionales (si adults > 1)
-    for (let i = 1; i < numAdults; i++) {
-      const adultGuest = await Guest.createGuest({
-        name: `${name} - Acompañante ${i}`,
-        email: null,
-        phone: null,
-        attending: true,
-        mealType: "normal",
-        needsTransport: needsTransport || false,
-        allergies: null,
-        notes: `Acompañante de ${name}`,
-        tableId,
-        isAdult: true,
-      });
-      createdGuests.push(adultGuest);
+    if (numAdults > 1) {
+      // 2. Crear adultos adicionales (si adults > 1)
+      for (let i = 1; i < numAdults; i++) {
+        const adultGuest = await Guest.createGuest({
+          name: `${name} - Acompañante ${i}`,
+          email: null,
+          phone: null,
+          attending: isAttending,
+          mealType: "normal",
+          needsTransport: needsTransport || false,
+          allergies: null,
+          notes: `Acompañante de ${name}`,
+          tableId,
+          seatNumber: getSeatNumberForIndex(i),
+          isAdult: true,
+        });
+        createdGuests.push(adultGuest);
+      }
     }
 
-    // 3. Crear niños
-    for (let i = 0; i < numChildren; i++) {
-      const childGuest = await Guest.createGuest({
-        name: `${name} - Niño ${i + 1}`,
-        email: null,
-        phone: null,
-        attending: true,
-        mealType: "normal",
-        needsTransport: needsTransport || false,
-        allergies: null,
-        notes: `Niño/a de ${name}`,
-        tableId,
-        isAdult: false,
-      });
-      createdGuests.push(childGuest);
+    if (isAdult) {
+      // 3. Crear niños
+      for (let i = 0; i < numChildren; i++) {
+        const childGuest = await Guest.createGuest({
+          name: `${name} - Niño ${i + 1}`,
+          email: null,
+          phone: null,
+          attending: isAttending,
+          mealType: "normal",
+          needsTransport: needsTransport || false,
+          allergies: null,
+          notes: `Niño/a de ${name}`,
+          tableId,
+          seatNumber: getSeatNumberForIndex(numAdults + i),
+          isAdult: false,
+        });
+        createdGuests.push(childGuest);
+      }
     }
 
-    // Enviar email al propietario (solo para el principal)
-    await sendNewGuestEmail(mainGuest, numAdults, numChildren);
+    if (sendEmail !== false) {
+      // Enviar email al propietario (solo para el principal)
+      await sendNewGuestEmail(mainGuest, numAdults, numChildren);
+    }
 
     // Opcionalmente enviar confirmación al invitado
     if (process.env.SEND_CONFIRMATION_EMAIL === "true" && mainGuest.email) {
       await sendGuestConfirmationEmail(mainGuest);
     }
 
+    let message = `${totalAttendees} invitado(s) creados (${numAdults} adultos, ${numChildren} niños) - Estado: ${isAttending ? "Confirmado" : "No confirma"})`;
+    if (isAttending) {
+      if (tableId) {
+        message += ` asignados a mesa ID ${tableId}`;
+      } else {
+        message += ` (sin mesa asignada, quedan en "por asignar")`;
+      }
+    }
+
     res.status(201).json({
       success: true,
       data: mainGuest,
       allGuests: createdGuests,
-      message: `${totalAttendees} invitado(s) creados (${numAdults} adultos, ${numChildren} niños) asignados a mesa ID ${tableId}`,
+      message,
     });
   } catch (error) {
     console.error("Error creating guest(s):", error);
@@ -252,6 +407,18 @@ export const updateGuest = async (req, res) => {
         success: false,
         error: "Guest not found",
       });
+    }
+
+    // Validar capacidad de la mesa si se intenta asignar una
+    if (tableId !== undefined && tableId !== null) {
+      const capacityCheck = await validateTableCapacity(tableId, id);
+      if (!capacityCheck.valid) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid table assignment",
+          message: capacityCheck.error,
+        });
+      }
     }
 
     const updatedGuest = await Guest.updateGuest(id, {
@@ -299,6 +466,21 @@ export const patchGuest = async (req, res) => {
       });
     }
 
+    // Validar capacidad de la mesa si se intenta asignar una
+    if (partialData.tableId !== undefined && partialData.tableId !== null) {
+      const capacityCheck = await validateTableCapacity(
+        partialData.tableId,
+        id,
+      );
+      if (!capacityCheck.valid) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid table assignment",
+          message: capacityCheck.error,
+        });
+      }
+    }
+
     const updatedGuest = await Guest.patchGuest(id, partialData);
 
     res.json({
@@ -341,6 +523,83 @@ export const deleteGuest = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Error deleting guest",
+      message: error.message,
+    });
+  }
+};
+
+// solicita envío de código de confirmación para borrado de todos
+export const requestDeleteCode = async (req, res) => {
+  try {
+    // generar y guardar código con expiración (15 minutos)
+    pendingDeleteCode = generateDeleteCode();
+    pendingDeleteExpiry = Date.now() + 15 * 60 * 1000;
+
+    // log para desarrollo
+    console.log("🔐 Código de borrado generado:", pendingDeleteCode);
+
+    // enviar correo al dueño
+    await sendDeleteCodeEmail(pendingDeleteCode);
+
+    // en desarrollo devolvemos el código tambien para facilitar pruebas
+    const responsePayload = {
+      success: true,
+      message: "Confirmation code sent via email",
+    };
+    if (process.env.NODE_ENV !== "production") {
+      responsePayload.code = pendingDeleteCode;
+    }
+    res.json(responsePayload);
+  } catch (error) {
+    console.error("Error requesting delete code:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error generating confirmation code",
+      message: error.message,
+    });
+  }
+};
+
+// controlador para borrar todos los invitados
+export const deleteAllGuests = async (req, res) => {
+  try {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        error: "Confirmation code missing",
+      });
+    }
+    if (code !== pendingDeleteCode) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid confirmation code",
+      });
+    }
+    if (Date.now() > pendingDeleteExpiry) {
+      pendingDeleteCode = null;
+      pendingDeleteExpiry = null;
+      return res.status(400).json({
+        success: false,
+        error: "Confirmation code expired",
+      });
+    }
+
+    // resetear código para evitar reutilización
+    pendingDeleteCode = null;
+    pendingDeleteExpiry = null;
+
+    const result = await Guest.deleteAllGuests();
+    res.json({
+      success: true,
+      data: result,
+      message: "All guests deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting all guests:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error deleting all guests",
       message: error.message,
     });
   }
