@@ -12,6 +12,7 @@ import { initializeEmailService } from "./services/emailService.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
+import compression from "compression";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ initializeEmailService();
 
 // Security Middlewares
 app.use(helmet());
+app.use(compression());
 
 // Rate Limiting
 const generalLimiter = rateLimit({
@@ -41,7 +43,10 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: "Too many requests, please try again later." }
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
 });
 
 const authLimiter = rateLimit({
@@ -49,19 +54,22 @@ const authLimiter = rateLimit({
   max: 10, // Limit each IP to 10 login attempts per hour
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: "Too many login attempts, please try again in an hour." }
+  message: {
+    success: false,
+    message: "Too many login attempts, please try again in an hour.",
+  },
 });
 
 const corsOptions = {
   origin: process.env.ORIGIN_URL || "http://localhost:4200",
-  methods: ["GET", "POST", "PUT","PATCH", "DELETE"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   credentials: true,
 };
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/", generalLimiter);
 
 // Health check
