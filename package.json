@@ -1,6 +1,6 @@
 {
   "name": "boda-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "API REST para gestión de invitados a boda",
   "main": "src/index.js",
   "type": "module",
@@ -25,7 +25,7 @@
     "body-parser": "^1.20.2",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.3.1",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.1.0",
