@@ -13,7 +13,11 @@ import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import compression from "compression";
 
-process.loadEnvFile();
+try {
+  process.loadEnvFile();
+} catch {
+  console.warn("No .env file found, relying on environment variables");
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
