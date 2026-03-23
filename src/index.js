@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import "dotenv/config";
 import db from "./db.js";
 import guestRoutes from "./routes/guests.js";
 import statsRoutes from "./routes/stats.js";
@@ -13,6 +12,8 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import compression from "compression";
+
+process.loadEnvFile();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,7 +42,7 @@ const generalLimiter = rateLimit({
     }
     return 100;
   },
-  standardHeaders: true,
+  standardHeaders: "draft-8",
   legacyHeaders: false,
   message: {
     success: false,
@@ -67,6 +68,7 @@ const corsOptions = {
 };
 
 // Middleware
+app.set("trust proxy", 1); // Si estás detrás de un proxy (como render), esto es necesario para que rateLimit funcione correctamente con IPs reales
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));

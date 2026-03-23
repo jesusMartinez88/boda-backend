@@ -19,7 +19,6 @@ Se ha instalado automáticamente con `npm install`.
 - Express.js - Framework web
 - SQLite3 - Base de datos
 - CORS - Control de origen
-- dotenv - Variables de entorno
 
 ## Iniciar el servidor
 
