@@ -311,6 +311,24 @@ const initializeTables = () => {
         }
       },
     );
+
+    // Tabla de tareas (Todos)
+    db.run(
+      `
+      CREATE TABLE IF NOT EXISTS todos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        date DATETIME,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `,
+      (err) => {
+        if (err) console.error("Error creating todos table:", err);
+        else console.log("Todos table ready");
+      },
+    );
   });
 };
 

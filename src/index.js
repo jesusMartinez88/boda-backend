@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.js";
 import settingsRoutes from "./routes/settings.js";
 import tableRoutes from "./routes/tables.js";
 import financeRoutes from "./routes/finances.js";
+import todoRoutes from "./routes/todos.js";
 import { initializeEmailService } from "./services/emailService.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
@@ -91,6 +92,7 @@ app.use("/api/table", tableRoutes); // Alias en singular
 app.use("/api/guests", guestRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/finances", financeRoutes);
+app.use("/api/todos", todoRoutes);
 
 // 404 handler
 app.use((req, res) => {
