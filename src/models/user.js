@@ -1,13 +1,8 @@
 import db from "../db.js";
 import bcrypt from "bcryptjs";
 
-export const findByUsername = (username) => {
-  return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+export const findByUsername = async (username) => {
+  return await db.get("SELECT * FROM users WHERE username = ?", [username]);
 };
 
 export const comparePassword = async (password, hashedPassword) => {

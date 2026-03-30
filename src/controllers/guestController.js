@@ -9,7 +9,8 @@ import {
 } from "../services/emailService.js";
 import { table } from "console";
 
-const dbAll = promisify(db.all.bind(db));
+// Ya no necesitamos promisify porque db.all ya devuelve una promesa
+const dbAll = db.all;
 
 // sistema simple de código de confirmación para borrado masivo
 let pendingDeleteCode = null;
@@ -689,34 +690,20 @@ export const resetDatabase = async (req, res) => {
     // Importar la función de reseteo
     const db = (await import("../db.js")).default;
 
-    db.serialize(() => {
-      db.run("DELETE FROM preferences", (err) => {
-        if (err) console.error("Error clearing preferences:", err);
-      });
+    // Refactorizado a async/await secuencial
+    await db.run("DELETE FROM preferences");
+    await db.run("DELETE FROM companions");
+    await db.run("DELETE FROM guests");
+    await db.run("DELETE FROM sqlite_sequence");
 
-      db.run("DELETE FROM companions", (err) => {
-        if (err) console.error("Error clearing companions:", err);
-      });
-
-      db.run("DELETE FROM guests", (err) => {
-        if (err) console.error("Error clearing guests:", err);
-      });
-
-      db.run("DELETE FROM sqlite_sequence", (err) => {
-        if (err) console.error("Error resetting IDs:", err);
-      });
+    res.json({
+      success: true,
+      message: "Database reset successfully",
+      data: {
+        tables_cleared: ["guests", "companions", "preferences"],
+        ids_reset: true,
+      },
     });
-
-    setTimeout(() => {
-      res.json({
-        success: true,
-        message: "Database reset successfully",
-        data: {
-          tables_cleared: ["guests", "companions", "preferences"],
-          ids_reset: true,
-        },
-      });
-    }, 300);
   } catch (error) {
     console.error("Error resetting database:", error);
     res.status(500).json({

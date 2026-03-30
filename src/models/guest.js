@@ -1,10 +1,4 @@
 import db from "../db.js";
-import { promisify } from "util";
-
-// Promisificar métodos de la base de datos
-const dbAll = promisify(db.all.bind(db));
-const dbGet = promisify(db.get.bind(db));
-const dbRun = promisify(db.run.bind(db));
 
 export const getAllGuests = async (filters = {}) => {
   let query = "SELECT * FROM guests WHERE 1=1";
@@ -28,21 +22,12 @@ export const getAllGuests = async (filters = {}) => {
 
   query += " ORDER BY name ASC";
 
-  return new Promise((resolve, reject) => {
-    db.all(query, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
-  });
+  const rows = await db.all(query, params);
+  return rows || [];
 };
 
 export const getGuestById = async (id) => {
-  return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM guests WHERE id = ?", [id], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  return await db.get("SELECT * FROM guests WHERE id = ?", [id]);
 };
 
 export const createGuest = async (guestData) => {
@@ -60,31 +45,25 @@ export const createGuest = async (guestData) => {
     seatNumber,
   } = guestData;
 
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult, seatNumber)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        name,
-        email,
-        phone,
-        attending ? 1 : 0,
-        mealType || "normal",
-        needsTransport ? 1 : 0,
-        allergies,
-        notes,
-        tableId || null,
-        isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
-        seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
-      ],
-      function (err) {
-        if (err) reject(err);
-        else {
-          resolve({ id: this.lastID, ...guestData });
-        }
-      },
-    );
-  });
+  const result = await db.run(
+    `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult, seatNumber)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      name,
+      email || null,
+      phone || null,
+      attending ? 1 : 0,
+      mealType || "normal",
+      needsTransport ? 1 : 0,
+      allergies || null,
+      notes || null,
+      tableId || null,
+      isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
+      seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
+    ],
+  );
+
+  return { id: result.lastID, ...guestData };
 };
 
 export const updateGuest = async (id, guestData) => {
@@ -102,36 +81,29 @@ export const updateGuest = async (id, guestData) => {
     seatNumber,
   } = guestData;
 
-  return new Promise((resolve, reject) => {
-    db.run(
-      `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, seatNumber = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [
-        name,
-        email,
-        phone,
-        attending ? 1 : 0,
-        mealType || "normal",
-        needsTransport ? 1 : 0,
-        allergies,
-        notes,
-        tableId !== undefined ? tableId : null,
-        isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
-        seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
-        id,
-      ],
-      function (err) {
-        if (err) reject(err);
-        else {
-          resolve({ id, ...guestData });
-        }
-      },
-    );
-  });
+  await db.run(
+    `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, seatNumber = ?, updatedAt = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      name,
+      email || null,
+      phone || null,
+      attending ? 1 : 0,
+      mealType || "normal",
+      needsTransport ? 1 : 0,
+      allergies || null,
+      notes || null,
+      tableId !== undefined ? tableId : null,
+      isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
+      seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
+      id,
+    ],
+  );
+
+  return { id, ...guestData };
 };
 
 export const patchGuest = async (id, partialData) => {
-  // Whitelist de campos permitidos para actualización parcial
   const allowedFields = [
     "name",
     "email",
@@ -165,158 +137,87 @@ export const patchGuest = async (id, partialData) => {
   });
   params.push(id);
 
-  return new Promise((resolve, reject) => {
-    db.run(
-      `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-      params,
-      async function (err) {
-        if (err) reject(err);
-        else {
-          const updated = await getGuestById(id);
-          resolve(updated);
-        }
-      },
-    );
-  });
+  await db.run(
+    `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+    params,
+  );
+
+  return await getGuestById(id);
 };
 
 export const deleteGuest = async (id) => {
-  return new Promise((resolve, reject) => {
-    db.run("DELETE FROM guests WHERE id = ?", [id], function (err) {
-      if (err) reject(err);
-      else {
-        resolve({ deletedId: id, changes: this.changes });
-      }
-    });
-  });
+  const result = await db.run("DELETE FROM guests WHERE id = ?", [id]);
+  return { deletedId: id, changes: result.changes };
 };
 
-// elimina todos los invitados de la tabla y reinicia el contador autoincrement
 export const deleteAllGuests = async () => {
-  return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run("DELETE FROM guests", function (err) {
-        if (err) return reject(err);
-      });
-      // reset sqlite_sequence for guests so next insert starts at 1
-      db.run(
-        "DELETE FROM sqlite_sequence WHERE name = 'guests'",
-        function (err) {
-          if (err) return reject(err);
-          resolve({ deletedAll: true, resetSeq: true });
-        },
-      );
-    });
-  });
+  await db.run("DELETE FROM guests");
+  await db.run("DELETE FROM sqlite_sequence WHERE name = 'guests'");
+  return { deletedAll: true, resetSeq: true };
 };
 
 export const getGuestStats = async () => {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT 
-        COUNT(*) as totalGuests,
-        SUM(CASE WHEN attending = 1 THEN 1 ELSE 0 END) as confirmados,
-        SUM(CASE WHEN attending = 0 THEN 1 ELSE 0 END) as pendientes,
-        SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
-        SUM(CASE WHEN isAdult = 1 THEN 1 ELSE 0 END) as totalAdults,
-        SUM(CASE WHEN isAdult = 0 THEN 1 ELSE 0 END) as totalChildren
-       FROM guests`,
-      [],
-      (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      },
-    );
-  });
+  return await db.get(
+    `SELECT 
+      COUNT(*) as totalGuests,
+      SUM(CASE WHEN attending = 1 THEN 1 ELSE 0 END) as confirmados,
+      SUM(CASE WHEN attending = 0 THEN 1 ELSE 0 END) as pendientes,
+      SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
+      SUM(CASE WHEN isAdult = 1 THEN 1 ELSE 0 END) as totalAdults,
+      SUM(CASE WHEN isAdult = 0 THEN 1 ELSE 0 END) as totalChildren
+     FROM guests`,
+  );
 };
 
 export const getAttendanceStats = async () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      `SELECT attending, COUNT(*) as count FROM guests GROUP BY attending`,
-      [],
-      (err, rows) => {
-        if (err) reject(err);
-        else {
-          const stats = {
-            confirmed: 0,
-            pending: 0,
-          };
-          rows?.forEach((row) => {
-            if (row.attending === 1) stats.confirmed = row.count;
-            if (row.attending === 0) stats.pending = row.count;
-          });
-          resolve(stats);
-        }
-      },
-    );
+  const rows = await db.all(
+    `SELECT attending, COUNT(*) as count FROM guests GROUP BY attending`,
+  );
+  
+  const stats = {
+    confirmed: 0,
+    pending: 0,
+  };
+  rows?.forEach((row) => {
+    if (Number(row.attending) === 1) stats.confirmed = Number(row.count);
+    if (Number(row.attending) === 0) stats.pending = Number(row.count);
   });
+  return stats;
 };
 
 export const getTransportationStats = async () => {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `SELECT 
-        SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
-        SUM(CASE WHEN needsTransport = 0 THEN 1 ELSE 0 END) as noTransport
-       FROM guests`,
-      [],
-      (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      },
-    );
-  });
+  return await db.get(
+    `SELECT 
+      SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
+      SUM(CASE WHEN needsTransport = 0 THEN 1 ELSE 0 END) as noTransport
+     FROM guests`,
+  );
 };
 
 export const getAllergiesStats = async () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      `SELECT allergies, COUNT(*) as count FROM guests WHERE allergies IS NOT NULL AND allergies != '' GROUP BY allergies`,
-      [],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      },
-    );
-  });
+  return await db.all(
+    `SELECT allergies, COUNT(*) as count FROM guests WHERE allergies IS NOT NULL AND allergies != '' GROUP BY allergies`,
+  );
 };
 
 export const getUniqueTableIds = async () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      "SELECT DISTINCT tableId FROM guests WHERE tableId IS NOT NULL",
-      [],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows.map((r) => r.tableId));
-      },
-    );
-  });
+  const rows = await db.all(
+    "SELECT DISTINCT tableId FROM guests WHERE tableId IS NOT NULL",
+  );
+  return rows.map((r) => r.tableId);
 };
 
 export const unassignGuestsFromTable = async (tableId) => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
-      [tableId],
-      function (err) {
-        if (err) reject(err);
-        else resolve({ tableId, changes: this.changes });
-      },
-    );
-  });
+  const result = await db.run(
+    "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
+    [tableId],
+  );
+  return { tableId, changes: result.changes };
 };
 
-// desasigna a TODOS los invitados de todas las mesas
 export const unassignAllGuestsFromTables = async () => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId IS NOT NULL",
-      function (err) {
-        if (err) reject(err);
-        else resolve({ changes: this.changes });
-      },
-    );
-  });
+  const result = await db.run(
+    "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId IS NOT NULL",
+  );
+  return { changes: result.changes };
 };

@@ -1,3 +1,4 @@
+import "./env.js";
 import express from "express";
 import cors from "cors";
 import db from "./db.js";
@@ -13,12 +14,6 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import compression from "compression";
-
-try {
-  process.loadEnvFile();
-} catch {
-  console.warn("No .env file found, relying on environment variables");
-}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -122,8 +117,6 @@ app.listen(PORT, () => {
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("Shutting down...");
-  db.close((err) => {
-    if (err) console.error("Error closing database:", err);
-    process.exit(0);
-  });
+  // El cliente de libSQL no requiere un cierre explícito forzado de la misma manera que sqlite3
+  process.exit(0);
 });

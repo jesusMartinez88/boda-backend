@@ -1,77 +1,52 @@
 import db from "../db.js";
 
-export const getNextTableName = () => {
-  return new Promise((resolve, reject) => {
-    // Buscar el valor numérico más alto en nombres que sigan el patrón "Mesa X"
-    db.all(
-      `
-      SELECT name FROM (
-        SELECT name FROM tables
-        UNION
-        SELECT tableName as name FROM guests
-      ) WHERE name LIKE 'Mesa %'
-    `,
-      [],
-      (err, rows) => {
-        if (err) return reject(err);
+export const getNextTableName = async () => {
+  // Buscar el valor numérico más alto en nombres que sigan el patrón "Mesa X"
+  const rows = await db.all(
+    `
+    SELECT name FROM (
+      SELECT name FROM tables
+      UNION
+      SELECT tableId as name FROM guests
+    ) WHERE name LIKE 'Mesa %'
+  `,
+  );
 
-        let maxNum = 0;
-        rows.forEach((row) => {
-          const match = row.name.match(/^Mesa (\d+)$/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (num > maxNum) maxNum = num;
-          }
-        });
-
-        resolve(`Mesa ${maxNum + 1}`);
-      },
-    );
+  let maxNum = 0;
+  rows.forEach((row) => {
+    const match = row.name.match(/^Mesa (\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
   });
+
+  return `Mesa ${maxNum + 1}`;
 };
 
-export const getAllTables = () => {
-  return new Promise((resolve, reject) => {
-    db.all("SELECT * FROM tables ORDER BY name ASC", [], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
-  });
+export const getAllTables = async () => {
+  const rows = await db.all("SELECT * FROM tables ORDER BY name ASC");
+  return rows || [];
 };
 
-export const getTableByName = (name) => {
-  return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM tables WHERE name = ?", [name], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+export const getTableByName = async (name) => {
+  return await db.get("SELECT * FROM tables WHERE name = ?", [name]);
 };
 
-export const getTableById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM tables WHERE id = ?", [id], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+export const getTableById = async (id) => {
+  return await db.get("SELECT * FROM tables WHERE id = ?", [id]);
 };
 
-export const createTable = (tableData) => {
+export const createTable = async (tableData) => {
   const { name, capacity, shape, posX, posY } = tableData;
-  return new Promise((resolve, reject) => {
-    db.run(
-      "INSERT INTO tables (name, capacity, shape, posX, posY) VALUES (?, ?, ?, ?, ?)",
-      [name, capacity, shape || "round", posX || 0, posY || 0],
-      function (err) {
-        if (err) reject(err);
-        else resolve({ id: this.lastID, ...tableData });
-      },
-    );
-  });
+  const result = await db.run(
+    "INSERT INTO tables (name, capacity, shape, posX, posY) VALUES (?, ?, ?, ?, ?)",
+    [name, capacity, shape || "round", posX || 0, posY || 0],
+  );
+  return { id: result.lastID, ...tableData };
 };
 
-export const updateTableById = (id, tableData) => {
+export const updateTableById = async (id, tableData) => {
   const { name, capacity, shape, posX, posY } = tableData;
   const fields = [];
   const params = [];
@@ -97,55 +72,30 @@ export const updateTableById = (id, tableData) => {
     params.push(posY);
   }
 
-  if (fields.length === 0) return Promise.resolve({ id, changes: 0 });
+  if (fields.length === 0) return { id, changes: 0 };
 
   params.push(id);
 
-  return new Promise((resolve, reject) => {
-    db.run(
-      `UPDATE tables SET ${fields.join(", ")}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-      params,
-      function (err) {
-        if (err) reject(err);
-        else resolve({ id, changes: this.changes });
-      },
-    );
-  });
+  const result = await db.run(
+    `UPDATE tables SET ${fields.join(", ")}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+    params,
+  );
+  return { id, changes: result.changes };
 };
 
-export const deleteTableById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.run("DELETE FROM tables WHERE id = ?", [id], function (err) {
-      if (err) reject(err);
-      else resolve({ id, changes: this.changes });
-    });
-  });
+export const deleteTableById = async (id) => {
+  const result = await db.run("DELETE FROM tables WHERE id = ?", [id]);
+  return { id, changes: result.changes };
 };
 
-export const deleteTableByName = (name) => {
-  return new Promise((resolve, reject) => {
-    db.run("DELETE FROM tables WHERE name = ?", [name], function (err) {
-      if (err) reject(err);
-      else resolve({ name, changes: this.changes });
-    });
-  });
+export const deleteTableByName = async (name) => {
+  const result = await db.run("DELETE FROM tables WHERE name = ?", [name]);
+  return { name, changes: result.changes };
 };
 
 // elimina todas las mesas de la tabla y reinicia el contador autoincrement
 export const deleteAllTables = async () => {
-  return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run("DELETE FROM tables", function (err) {
-        if (err) return reject(err);
-      });
-      // reset sqlite_sequence for tables so next insert starts at 1
-      db.run(
-        "DELETE FROM sqlite_sequence WHERE name = 'tables'",
-        function (err) {
-          if (err) return reject(err);
-          resolve({ deletedAll: true, resetSeq: true });
-        },
-      );
-    });
-  });
+  await db.run("DELETE FROM tables");
+  await db.run("DELETE FROM sqlite_sequence WHERE name = 'tables'");
+  return { deletedAll: true, resetSeq: true };
 };
