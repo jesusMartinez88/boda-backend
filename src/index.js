@@ -101,10 +101,12 @@ app.use((req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error("Error:", err);
-  res.status(500).json({
+  const isProduction = process.env.NODE_ENV === "production";
+  res.status(err.status || 500).json({
     success: false,
     error: "Internal server error",
-    message: err.message,
+    // Never leak internal details to the client in production
+    ...(isProduction ? {} : { message: err.message }),
   });
 });
 

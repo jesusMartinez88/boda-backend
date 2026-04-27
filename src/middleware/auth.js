@@ -5,27 +5,27 @@ export const authenticateJWT = (req, res, next) => {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
-    console.warn("WARNING: JWT_SECRET is not defined in environment variables!");
+    console.error("FATAL: JWT_SECRET is not defined. Cannot authenticate.");
+    return res.status(500).json({
+      success: false,
+      message: "Server configuration error",
+    });
   }
 
   if (authHeader) {
     const token = authHeader.split(" ")[1];
 
-    jwt.verify(
-      token,
-      secret || "temporary-dev-secret-replace-me",
-      (err, user) => {
-        if (err) {
-          return res.status(403).json({
-            success: false,
-            message: "Invalid or expired token",
-          });
-        }
-
-        req.user = user;
-        next();
+    jwt.verify(token, secret, (err, user) => {
+      if (err) {
+        return res.status(403).json({
+          success: false,
+          message: "Invalid or expired token",
+        });
       }
-    );
+
+      req.user = user;
+      next();
+    });
   } else {
     res.status(401).json({
       success: false,
