@@ -24,7 +24,16 @@ initializeEmailService();
 
 // Security Middlewares
 app.use(helmet());
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    // No comprimir si es la ruta de IA (para que el streaming funcione)
+    if (req.originalUrl?.includes('/api/ai')) {
+      return false;
+    }
+    // Para el resto, usar el filtro por defecto
+    return compression.filter(req, res);
+  }
+}));
 
 // Rate Limiting
 const generalLimiter = rateLimit({
@@ -101,14 +110,21 @@ app.use((req, res) => {
 });
 
 // Error handling middleware
+import fs from "fs";
 app.use((err, req, res, next) => {
   console.error("Error:", err);
+  
+  // Log a un archivo para que yo pueda verlo
+  try {
+    fs.appendFileSync("error_log.txt", `[${new Date().toISOString()}] ERROR: ${err.stack}\n`);
+  } catch (e) {}
+
   const isProduction = process.env.NODE_ENV === "production";
   res.status(err.status || 500).json({
     success: false,
     error: "Internal server error",
     // Never leak internal details to the client in production
-    ...(isProduction ? {} : { message: err.message }),
+    ...(isProduction ? {} : { message: err.message, stack: err.stack }),
   });
 });
 

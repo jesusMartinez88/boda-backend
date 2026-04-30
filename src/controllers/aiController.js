@@ -1,6 +1,18 @@
+import { streamText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openrouter/free";
+
+const openrouter = createOpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: OPENROUTER_API_KEY,
+  compatibility: "strict",
+  headers: {
+    "HTTP-Referer": "https://github.com/jesusMartinez88/boda-judith-jesus",
+    "X-Title": "Boda Judith & Jesus",
+  }
+});
 
 const PROMPTS = {
   absence_reason: (guestName) =>
@@ -33,97 +45,49 @@ const PROMPTS = {
   },
 };
 
-const callOpenRouter = async (prompt, modelOverride = null) => {
-  const modelToUse = modelOverride || MODEL;
-  console.log(`Calling OpenRouter with model ${modelToUse} and prompt: ${prompt.substring(0, 50)}...`);
-  
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/jesusMartinez88/boda-judith-jesus",
-      "X-Title": "Boda Judith & Jesus",
-    },
-    body: JSON.stringify({
-      model: modelToUse,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 400,
-      temperature: 0.7,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error(`OpenRouter error: ${response.status}`, errorBody);
-    throw new Error(`OpenRouter error ${response.status}: ${errorBody}`);
-  }
-
-  const data = await response.json();
-  
-  if (data.error) {
-    console.error("OpenRouter API Error:", data.error);
-    throw new Error(`OpenRouter API Error: ${data.error.message || JSON.stringify(data.error)}`);
-  }
-
-  const content = data.choices?.[0]?.message?.content;
-  
-  if (!content) {
-    console.error("OpenRouter response without content:", JSON.stringify(data));
-    
-    // Si es el primer intento (sin override), reintentamos con Llama
-    if (!modelOverride) {
-      console.log("Empty response detected. Retrying once with google/gemini-2.0-flash-lite-preview-02-05:free...");
-      return callOpenRouter(prompt, "google/gemini-2.0-flash-lite-preview-02-05:free");
-    }
-    
-    throw new Error("El modelo de IA devolvió una respuesta vacía. Esto puede deberse a saturación del modelo gratuito o límites de la API.");
-  }
-  
-  return content.trim();
-};
-
 export const generateText = async (req, res) => {
   try {
-    const { type, guestName, songHint } = req.body;
+    const { type, guestName, songHint, stream } = req.body;
 
-    if (!type || !guestName) {
-      return res.status(400).json({
-        success: false,
-        error: "Los campos 'type' y 'guestName' son requeridos",
-      });
+    if (!OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY no está configurada en el servidor");
     }
 
-    const validTypes = ["absence_reason", "attendance_note", "song_request", "attendance_full"];
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({
-        success: false,
-        error: `Tipo inválido. Valores permitidos: ${validTypes.join(", ")}`,
-      });
+    if (!type || !guestName) {
+      return res.status(400).json({ success: false, error: "Missing fields" });
     }
 
     const promptFn = PROMPTS[type];
-    const prompt =
-      type === "song_request"
-        ? promptFn(guestName, songHint)
-        : promptFn(guestName);
+    const prompt = type === "song_request" ? promptFn(guestName, songHint) : promptFn(guestName);
 
-    const text = await callOpenRouter(prompt);
+    console.log(`Generating AI text (stream=${!!stream}) for ${guestName} using ${MODEL}...`);
 
-    res.json({
-      success: true,
-      data: {
-        type,
-        guestName,
-        text,
-      },
-    });
+    if (stream) {
+      const result = streamText({
+        model: openrouter(MODEL),
+        prompt: prompt,
+      });
+
+      // Evitar que proxies o el servidor buffereen la respuesta
+      res.setHeader('X-Accel-Buffering', 'no');
+      result.pipeTextStreamToResponse(res);
+    } else {
+      const { text } = await streamText({
+        model: openrouter(MODEL),
+        prompt: prompt,
+      });
+      res.json({ success: true, data: { text } });
+    }
   } catch (error) {
-    console.error("Error generating AI text:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error al generar texto con IA",
-      message: error.message,
-    });
+    console.error("AI SDK Error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        success: false, 
+        error: "Error en la generación de IA",
+        details: error.message 
+      });
+    } else {
+      res.end();
+    }
   }
 };
