@@ -1,4 +1,4 @@
-import { streamText } from "ai";
+import { streamText, generateText as aiGenerateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
@@ -43,6 +43,13 @@ const PROMPTS = {
     Sugiere una canción concreta (título y artista) que encaje en la fiesta, dando prioridad a música en español. 
     Diles en una frase por qué quieres que suene ese día.`;
   },
+
+  invitation_text: (guestName) =>
+    `Actúa como los novios (Judith y Jesús) invitando a "${guestName}" a su boda. 
+    Escribe una invitación personalizada, cálida y emocionante por WhatsApp en español. 
+    Incluye un toque de alegría y diles que esperas verlos allí. 
+    Menciona que pueden confirmar su asistencia en el siguiente enlace: https://boda-judith-jesus.onrender.com/
+    Usa emojis para que sea más visual. Máximo 3 frases.`,
 };
 
 export const generateText = async (req, res) => {
@@ -72,11 +79,13 @@ export const generateText = async (req, res) => {
       res.setHeader('X-Accel-Buffering', 'no');
       result.pipeTextStreamToResponse(res);
     } else {
-      const { text } = await streamText({
+      const { text } = await aiGenerateText({
         model: openrouter(MODEL),
         prompt: prompt,
       });
-      res.json({ success: true, data: { text } });
+      const responseBody = JSON.stringify({ success: true, data: { text } });
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(Buffer.from(responseBody, 'utf-8'));
     }
   } catch (error) {
     console.error("AI SDK Error:", error);

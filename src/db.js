@@ -212,6 +212,36 @@ const initializeTables = async () => {
       )
     `);
 
+    // Tabla de categorías de contactos
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS contact_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        slug TEXT NOT NULL UNIQUE,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Insertar categorías por defecto si no existen
+    try {
+      await db.run("INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novio', 'novio')");
+      await db.run("INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novia', 'novia')");
+    } catch (e) {}
+
+    // Tabla de contactos para invitaciones (sin restricción de side)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        side TEXT NOT NULL,
+        linkSent INTEGER DEFAULT 0,
+        sentAt DATETIME,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log(`${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`);
   } catch (err) {
     console.error(`Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`, err);

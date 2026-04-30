@@ -10,6 +10,8 @@ import tableRoutes from "./routes/tables.js";
 import financeRoutes from "./routes/finances.js";
 import todoRoutes from "./routes/todos.js";
 import aiRoutes from "./routes/ai.js";
+import contactRoutes from "./routes/contacts.js";
+import categoryRoutes from "./routes/categories.js";
 import { initializeEmailService } from "./services/emailService.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
@@ -99,6 +101,8 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/finances", financeRoutes);
 app.use("/api/todos", todoRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/contacts", contactRoutes);
+app.use("/api/categories", categoryRoutes);
 
 // 404 handler
 app.use((req, res) => {
