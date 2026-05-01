@@ -235,12 +235,30 @@ const initializeTables = async () => {
         name TEXT NOT NULL,
         phone TEXT NOT NULL,
         side TEXT NOT NULL,
+        country_code TEXT DEFAULT '+34' NOT NULL,
         linkSent INTEGER DEFAULT 0,
         sentAt DATETIME,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migración: agregar country_code a contactos existentes si no existe
+    // Solo intentar si la tabla ya existía (verificar si tiene la columna)
+    try {
+      const tableInfo = await db.all("PRAGMA table_info(contacts)");
+      const hasCountryCode = tableInfo.some(col => col.name === "country_code");
+      
+      if (!hasCountryCode) {
+        await db.run(`ALTER TABLE contacts ADD COLUMN country_code TEXT DEFAULT '+34' NOT NULL`);
+        console.log("✅ Column country_code added to existing contacts table");
+      }
+    } catch (err) {
+      // Ignorar errores de migración - la columna ya existe en el schema
+      if (!err.message.includes("duplicate column")) {
+        console.error("Migration warning:", err.message);
+      }
+    }
 
     console.log(`${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`);
   } catch (err) {

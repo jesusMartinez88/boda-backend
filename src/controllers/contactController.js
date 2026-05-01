@@ -20,6 +20,11 @@ const isValidPhone = (phone) => {
   return /^[67]\d{8}$/.test(clean);
 };
 
+const isValidCountryCode = (countryCode) => {
+  if (!countryCode) return false;
+  return /^\+\d{1,3}$/.test(countryCode);
+};
+
 export const createContact = async (req, res) => {
   try {
     const contactData = req.body;
@@ -28,6 +33,9 @@ export const createContact = async (req, res) => {
       if (!data.name || !data.phone) throw new Error("Nombre y teléfono son obligatorios");
       if (!isValidPhone(data.phone)) {
         throw new Error(`Teléfono inválido (${data.phone}). Debe empezar por 6 o 7 y tener 9 dígitos.`);
+      }
+      if (data.countryCode && !isValidCountryCode(data.countryCode)) {
+        throw new Error(`Código de país inválido (${data.countryCode}). Debe tener formato +XX o +XXX.`);
       }
     };
 
