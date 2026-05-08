@@ -4,3 +4,7 @@ data/
 *.log
 .env.local
 .env
+
+# Logs directory (keep folder, ignore files)
+logs/*.log
+error_log.txt

@@ -1,4 +1,7 @@
 import * as ContactModel from "../models/contact.js";
+import { isValidPhoneNumber } from "libphonenumber-js";
+import { logWarn } from "../utils/logger.js";
+import { validateFields, sanitizeObject, FIELD_LIMITS } from "../utils/validation.js";
 
 export const getContacts = async (req, res) => {
   try {
@@ -14,12 +17,32 @@ export const getContacts = async (req, res) => {
   }
 };
 
-const isValidPhone = (phone) => {
+/**
+ * Valida un número de teléfono según el código de país
+ * @param {string} phone - Número de teléfono sin código de país
+ * @param {string} countryCode - Código de país (ej: +34, +1, +44)
+ * @returns {boolean} - true si el teléfono es válido
+ */
+const isValidPhone = (phone, countryCode = '+34') => {
   if (!phone) return false;
-  const clean = phone.replace(/\s/g, "").replace(/^\+34|^34/, "");
-  return /^[67]\d{8}$/.test(clean);
+  
+  try {
+    // Construir el número completo
+    const fullNumber = `${countryCode}${phone}`;
+    
+    // Validar usando libphonenumber-js
+    return isValidPhoneNumber(fullNumber);
+  } catch (error) {
+    logWarn("Phone validation error", { phone, countryCode, error: error.message });
+    return false;
+  }
 };
 
+/**
+ * Valida el formato del código de país
+ * @param {string} countryCode - Código de país (ej: +34, +1, +44)
+ * @returns {boolean} - true si el formato es válido
+ */
 const isValidCountryCode = (countryCode) => {
   if (!countryCode) return false;
   return /^\+\d{1,3}$/.test(countryCode);
@@ -30,12 +53,35 @@ export const createContact = async (req, res) => {
     const contactData = req.body;
 
     const validate = (data) => {
-      if (!data.name || !data.phone) throw new Error("Nombre y teléfono son obligatorios");
-      if (!isValidPhone(data.phone)) {
-        throw new Error(`Teléfono inválido (${data.phone}). Debe empezar por 6 o 7 y tener 9 dígitos.`);
+      // Validar campos obligatorios
+      if (!data.name || !data.phone) {
+        throw new Error("Nombre y teléfono son obligatorios");
       }
-      if (data.countryCode && !isValidCountryCode(data.countryCode)) {
-        throw new Error(`Código de país inválido (${data.countryCode}). Debe tener formato +XX o +XXX.`);
+      
+      // Validar longitud de campos
+      const lengthValidation = validateFields(data, {
+        name: FIELD_LIMITS.CONTACT_NAME,
+        phone: FIELD_LIMITS.GUEST_PHONE,
+      });
+      
+      if (!lengthValidation.valid) {
+        throw new Error(lengthValidation.errors.join(", "));
+      }
+      
+      // Sanitizar todos los campos de texto (eliminar HTML)
+      const sanitized = sanitizeObject(data, ['name', 'phone', 'side']);
+      Object.assign(data, sanitized);
+      
+      // Validar código de país
+      const countryCode = data.countryCode || '+34';
+      
+      if (!isValidCountryCode(countryCode)) {
+        throw new Error(`Código de país inválido (${countryCode}). Debe tener formato +XX o +XXX.`);
+      }
+      
+      // Validar teléfono
+      if (!isValidPhone(data.phone, countryCode)) {
+        throw new Error(`Teléfono inválido (${data.phone}) para el país ${countryCode}.`);
       }
     };
 

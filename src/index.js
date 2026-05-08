@@ -1,7 +1,6 @@
 import "./env.js";
 import express from "express";
 import cors from "cors";
-import db from "./db.js";
 import guestRoutes from "./routes/guests.js";
 import statsRoutes from "./routes/stats.js";
 import authRoutes from "./routes/auth.js";
@@ -17,6 +16,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import compression from "compression";
+import { logError, logInfo } from "./utils/logger.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,7 +25,31 @@ const PORT = process.env.PORT || 3000;
 initializeEmailService();
 
 // Security Middlewares
-app.use(helmet());
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Helmet con CSP configurado
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline necesario para algunos frameworks
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  // HSTS solo en producción
+  hsts: isProduction ? {
+    maxAge: 31536000, // 1 año
+    includeSubDomains: true,
+    preload: true
+  } : false,
+}));
+
 app.use(compression({
   filter: (req, res) => {
     // No comprimir si es la ruta de IA (para que el streaming funcione)
@@ -114,14 +138,9 @@ app.use((req, res) => {
 });
 
 // Error handling middleware
-import fs from "fs";
 app.use((err, req, res, next) => {
-  console.error("Error:", err);
-  
-  // Log a un archivo para que yo pueda verlo
-  try {
-    fs.appendFileSync("error_log.txt", `[${new Date().toISOString()}] ERROR: ${err.stack}\n`);
-  } catch (e) {}
+  // Log del error usando winston
+  logError(`Error in ${req.method} ${req.path}`, err);
 
   const isProduction = process.env.NODE_ENV === "production";
   res.status(err.status || 500).json({
@@ -134,13 +153,13 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🎉 Wedding API running on http://localhost:${PORT}`);
-  console.log(`📊 API documentation at http://localhost:${PORT}/health`);
+  logInfo(`🎉 Wedding API running on http://localhost:${PORT}`);
+  logInfo(`📊 API documentation at http://localhost:${PORT}/health`);
 });
 
 // Graceful shutdown
 process.on("SIGINT", () => {
-  console.log("Shutting down...");
+  logInfo("Shutting down gracefully...");
   // El cliente de libSQL no requiere un cierre explícito forzado de la misma manera que sqlite3
   process.exit(0);
 });

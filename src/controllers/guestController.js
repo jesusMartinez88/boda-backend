@@ -1,15 +1,13 @@
 import * as Guest from "../models/guest.js";
 import * as Setting from "../models/setting.js";
 import db from "../db.js";
-import { promisify } from "util";
 import {
   sendNewGuestEmail,
   sendGuestConfirmationEmail,
   sendDeleteCodeEmail,
 } from "../services/emailService.js";
-import { table } from "console";
+import { validateFields, sanitizeObject, isValidEmail, FIELD_LIMITS } from "../utils/validation.js";
 
-// Ya no necesitamos promisify porque db.all ya devuelve una promesa
 const dbAll = db.all;
 
 // sistema simple de código de confirmación para borrado masivo
@@ -247,6 +245,39 @@ export const createGuest = async (req, res) => {
         error: "Name is required",
       });
     }
+
+    // Validar longitud de campos
+    const lengthValidation = validateFields(req.body, {
+      name: FIELD_LIMITS.GUEST_NAME,
+      email: FIELD_LIMITS.GUEST_EMAIL,
+      phone: FIELD_LIMITS.GUEST_PHONE,
+      allergies: FIELD_LIMITS.GUEST_ALLERGIES,
+      notes: FIELD_LIMITS.GUEST_NOTES,
+    });
+
+    if (!lengthValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: lengthValidation.errors.join(", "),
+      });
+    }
+
+    // Validar email si está presente
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        error: "Email inválido",
+      });
+    }
+
+    // Sanitizar campos de texto (eliminar HTML de todos excepto notes que permite texto enriquecido)
+    const sanitizedBody = sanitizeObject(req.body, 
+      ['name', 'email', 'phone', 'allergies'], // Eliminar HTML completamente
+      ['notes'] // Permitir rich text seguro en notes
+    );
+    
+    // Actualizar los valores con los sanitizados
+    Object.assign(req.body, sanitizedBody);
 
     const finalChildren =
       req.body.childrens !== undefined ? req.body.childrens : children;
