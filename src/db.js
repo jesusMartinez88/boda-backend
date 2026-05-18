@@ -238,6 +238,8 @@ const initializeTables = async () => {
         country_code TEXT DEFAULT '+34' NOT NULL,
         linkSent INTEGER DEFAULT 0,
         sentAt DATETIME,
+        invitation_status TEXT DEFAULT 'not_sent',
+        responded_at DATETIME,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -255,6 +257,26 @@ const initializeTables = async () => {
       }
     } catch (err) {
       // Ignorar errores de migración - la columna ya existe en el schema
+      if (!err.message.includes("duplicate column")) {
+        console.error("Migration warning:", err.message);
+      }
+    }
+
+    // Migración: agregar invitation_status y responded_at a contactos existentes
+    try {
+      const tableInfo = await db.all("PRAGMA table_info(contacts)");
+      const hasInvitationStatus = tableInfo.some(col => col.name === "invitation_status");
+      const hasRespondedAt = tableInfo.some(col => col.name === "responded_at");
+      
+      if (!hasInvitationStatus) {
+        await db.run(`ALTER TABLE contacts ADD COLUMN invitation_status TEXT DEFAULT 'not_sent'`);
+        console.log("✅ Column invitation_status added to existing contacts table");
+      }
+      if (!hasRespondedAt) {
+        await db.run(`ALTER TABLE contacts ADD COLUMN responded_at DATETIME`);
+        console.log("✅ Column responded_at added to existing contacts table");
+      }
+    } catch (err) {
       if (!err.message.includes("duplicate column")) {
         console.error("Migration warning:", err.message);
       }

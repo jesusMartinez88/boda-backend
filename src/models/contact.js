@@ -3,10 +3,12 @@ import db from "../db.js";
 // Mapper para convertir snake_case de DB a camelCase para API
 const mapContactFromDb = (contact) => {
   if (!contact) return null;
-  const { country_code, ...rest } = contact;
+  const { country_code, invitation_status, responded_at, ...rest } = contact;
   return {
     ...rest,
-    countryCode: country_code
+    countryCode: country_code,
+    invitationStatus: invitation_status || 'not_sent',
+    respondedAt: responded_at || null
   };
 };
 
@@ -39,11 +41,11 @@ export const createContact = async (contactData) => {
   const { name, phone, side, countryCode = '+34' } = contactData;
 
   const result = await db.run(
-    `INSERT INTO contacts (name, phone, side, country_code) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO contacts (name, phone, side, country_code, invitation_status) VALUES (?, ?, ?, ?, 'not_sent')`,
     [name, phone, side, countryCode]
   );
 
-  return { id: result.lastID, ...contactData, countryCode, linkSent: 0 };
+  return { id: result.lastID, ...contactData, countryCode, linkSent: 0, invitationStatus: 'not_sent' };
 };
 
 export const createContactsBulk = async (contacts) => {
@@ -76,7 +78,7 @@ export const updateContact = async (id, contactData) => {
 };
 
 export const patchContact = async (id, partialData) => {
-  const allowedFields = ["name", "phone", "side", "countryCode", "linkSent", "sentAt"];
+  const allowedFields = ["name", "phone", "side", "countryCode", "linkSent", "sentAt", "invitationStatus", "respondedAt"];
   
   // Mapear countryCode a country_code para la DB
   const dbData = { ...partialData };
@@ -84,9 +86,17 @@ export const patchContact = async (id, partialData) => {
     dbData.country_code = dbData.countryCode;
     delete dbData.countryCode;
   }
+  if ('invitationStatus' in dbData) {
+    dbData.invitation_status = dbData.invitationStatus;
+    delete dbData.invitationStatus;
+  }
+  if ('respondedAt' in dbData) {
+    dbData.responded_at = dbData.respondedAt;
+    delete dbData.respondedAt;
+  }
   
   const fields = Object.keys(dbData).filter(f => 
-    allowedFields.includes(f) || f === 'country_code'
+    allowedFields.includes(f) || f === 'country_code' || f === 'invitation_status' || f === 'responded_at'
   );
   
   if (fields.length === 0) return await getContactById(id);
