@@ -86,6 +86,63 @@ data/
 - `GET /api/stats/transportation` - Estadísticas de transporte
 - `GET /api/stats/allergies` - Estadísticas de alergias
 
+### Playlist de música (JWT requerido)
+
+- `GET /api/music-playlist` - Lista canciones ordenadas por `order_index`
+- `POST /api/music-playlist` - Crea canción y autocalcula `youtube_id` + orden final
+- `PATCH /api/music-playlist/:id` - Actualización parcial de canción
+- `DELETE /api/music-playlist/:id` - Elimina canción por id
+- `PUT /api/music-playlist/reorder` - Reordena canciones en transacción
+
+Formato de respuesta uniforme:
+
+```json
+{
+  "success": true,
+  "data": {}
+}
+```
+
+```json
+{
+  "success": false,
+  "message": "Validation error",
+  "code": "VALIDATION_ERROR"
+}
+```
+
+Ejemplos `curl`:
+
+```bash
+curl -X POST "{{API_BASE_URL}}/api/music-playlist" \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Perfect",
+    "artist": "Ed Sheeran",
+    "youtube_url": "https://www.youtube.com/watch?v=2Vv-BfVoq4g",
+    "note": "Baile principal"
+  }'
+```
+
+```bash
+curl -X PUT "{{API_BASE_URL}}/api/music-playlist/reorder" \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "songs": [
+      { "id": 4, "order": 0 },
+      { "id": 1, "order": 1 }
+    ]
+  }'
+```
+
+Notas:
+
+- En local usa `DB_PATH` (`file:data/wedding.db` por defecto).
+- En producción usa `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`.
+- Además, `src/db.js` crea la tabla automáticamente con `CREATE TABLE IF NOT EXISTS` para mantener compatibilidad incremental.
+
 ## Ejemplo de Respuesta
 
 ```json

@@ -212,6 +212,26 @@ const initializeTables = async () => {
       )
     `);
 
+    // Tabla de playlist de musica
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS music_playlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        youtube_url TEXT NOT NULL,
+        youtube_id TEXT,
+        note TEXT,
+        order_index INTEGER NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(`
+      CREATE INDEX IF NOT EXISTS idx_music_playlist_order_index
+      ON music_playlist(order_index)
+    `);
+
     // Tabla de categorías de contactos
     await db.run(`
       CREATE TABLE IF NOT EXISTS contact_categories (
