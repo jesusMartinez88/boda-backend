@@ -105,15 +105,35 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, capacity, shape, posX, posY } = req.body;
+    const { name, capacity, shape, posX, posY, captainId } = req.body;
 
-    const result = await Table.updateTableById(id, {
-      name,
-      capacity,
-      shape,
-      posX,
-      posY,
-    });
+    // Validación: si se proporciona captainId (no null), verificar que el invitado
+    // está sentado en ESTA mesa (validación de integridad referencial en negocio)
+    if (captainId !== undefined && captainId !== null) {
+      const captain = await Guest.getGuestById(captainId);
+      if (!captain) {
+        return res.status(404).json({
+          success: false,
+          error: "Captain not found",
+          message: `No existe un invitado con id ${captainId}.`,
+        });
+      }
+      if (Number(captain.tableId) !== Number(id)) {
+        return res.status(422).json({
+          success: false,
+          error: "Invalid captain",
+          message: "El capitán debe estar sentado en esta mesa.",
+        });
+      }
+    }
+
+    const updateData = { name, capacity, shape, posX, posY };
+    // Incluir captainId solo si viene en el body (permite enviar null para quitar)
+    if ("captainId" in req.body) {
+      updateData.captainId = captainId ?? null;
+    }
+
+    const result = await Table.updateTableById(id, updateData);
     if (result.changes === 0) {
       return res.status(404).json({
         success: false,
@@ -123,7 +143,7 @@ export const updateTable = async (req, res) => {
 
     res.json({
       success: true,
-      data: mapTableResponse({ id, name, capacity, shape, posX, posY }), // Nota: esto es parcial pero cumple la respuesta
+      data: mapTableResponse({ id, name, capacity, shape, posX, posY, captainId: updateData.captainId }),
     });
   } catch (error) {
     console.error("Error updating table:", error);

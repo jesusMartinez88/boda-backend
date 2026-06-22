@@ -302,6 +302,20 @@ const initializeTables = async () => {
       }
     }
 
+    // Migración: agregar captainId a tables existentes si no existe
+    try {
+      const tablesInfo = await db.all("PRAGMA table_info(tables)");
+      const hasCaptainId = tablesInfo.some(col => col.name === "captainId");
+      if (!hasCaptainId) {
+        await db.run(`ALTER TABLE tables ADD COLUMN captainId INTEGER`);
+        console.log("✅ Column captainId added to existing tables table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (captainId):", err.message);
+      }
+    }
+
     console.log(`${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`);
   } catch (err) {
     console.error(`Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`, err);

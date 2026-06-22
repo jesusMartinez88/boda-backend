@@ -38,16 +38,16 @@ export const getTableById = async (id) => {
 };
 
 export const createTable = async (tableData) => {
-  const { name, capacity, shape, posX, posY } = tableData;
+  const { name, capacity, shape, posX, posY, captainId } = tableData;
   const result = await db.run(
-    "INSERT INTO tables (name, capacity, shape, posX, posY) VALUES (?, ?, ?, ?, ?)",
-    [name, capacity, shape || "round", posX || 0, posY || 0],
+    "INSERT INTO tables (name, capacity, shape, posX, posY, captainId) VALUES (?, ?, ?, ?, ?, ?)",
+    [name, capacity, shape || "round", posX || 0, posY || 0, captainId ?? null],
   );
   return { id: result.lastID, ...tableData };
 };
 
 export const updateTableById = async (id, tableData) => {
-  const { name, capacity, shape, posX, posY } = tableData;
+  const { name, capacity, shape, posX, posY, captainId } = tableData;
   const fields = [];
   const params = [];
 
@@ -70,6 +70,11 @@ export const updateTableById = async (id, tableData) => {
   if (posY !== undefined) {
     fields.push("posY = ?");
     params.push(posY);
+  }
+  // captainId puede ser null (quitar capitán) o un número (asignar)
+  if ("captainId" in tableData) {
+    fields.push("captainId = ?");
+    params.push(captainId ?? null);
   }
 
   if (fields.length === 0) return { id, changes: 0 };
