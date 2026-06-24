@@ -105,11 +105,39 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, capacity, shape, posX, posY, captainId } = req.body;
+    const { name, capacity, shape, posX, posY, captainId, captainIds, rotation } = req.body;
 
-    // Validación: si se proporciona captainId (no null), verificar que el invitado
-    // está sentado en ESTA mesa (validación de integridad referencial en negocio)
-    if (captainId !== undefined && captainId !== null) {
+    const existingTable = await Table.getTableById(id);
+    if (!existingTable) {
+      return res.status(404).json({
+        success: false,
+        error: "Table not found",
+      });
+    }
+
+    // Validación: si se proporciona captainIds (array), verificar cada capitán
+    if (captainIds && Array.isArray(captainIds)) {
+      for (const cid of captainIds) {
+        const captain = await Guest.getGuestById(cid);
+        if (!captain) {
+          return res.status(404).json({
+            success: false,
+            error: "Captain not found",
+            message: `No existe un invitado con id ${cid}.`,
+          });
+        }
+        if (Number(captain.tableId) !== Number(id)) {
+          return res.status(422).json({
+            success: false,
+            error: "Invalid captain",
+            message: `El capitán con id ${cid} debe estar sentado en esta mesa.`,
+          });
+        }
+      }
+    }
+    
+    // Legacy support: si se proporciona captainId (single), verificar el capitán
+    if (captainId !== undefined && captainId !== null && !captainIds) {
       const captain = await Guest.getGuestById(captainId);
       if (!captain) {
         return res.status(404).json({
@@ -128,22 +156,32 @@ export const updateTable = async (req, res) => {
     }
 
     const updateData = { name, capacity, shape, posX, posY };
-    // Incluir captainId solo si viene en el body (permite enviar null para quitar)
-    if ("captainId" in req.body) {
+    
+    if (rotation !== undefined) {
+      updateData.rotation = rotation;
+    }
+    
+    // Incluir captainIds si viene en el body
+    if ("captainIds" in req.body) {
+      updateData.captainIds = captainIds ?? null;
+    }
+    // Legacy support: incluir captainId si viene en el body (y no captainIds)
+    else if ("captainId" in req.body) {
       updateData.captainId = captainId ?? null;
     }
 
     const result = await Table.updateTableById(id, updateData);
     if (result.changes === 0) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        error: "Table not found",
+        error: "No fields to update",
       });
     }
 
+    const updatedTable = await Table.getTableById(id);
     res.json({
       success: true,
-      data: mapTableResponse({ id, name, capacity, shape, posX, posY, captainId: updateData.captainId }),
+      data: mapTableResponse(updatedTable),
     });
   } catch (error) {
     console.error("Error updating table:", error);

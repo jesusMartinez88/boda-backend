@@ -316,6 +316,48 @@ const initializeTables = async () => {
       }
     }
 
+    // Migración: agregar captainIds a tables (para múltiples capitanes)
+    try {
+      const tablesInfo = await db.all("PRAGMA table_info(tables)");
+      const hasCaptainIds = tablesInfo.some(col => col.name === "captainIds");
+      if (!hasCaptainIds) {
+        await db.run(`ALTER TABLE tables ADD COLUMN captainIds TEXT`);
+        console.log("✅ Column captainIds added to existing tables table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (captainIds):", err.message);
+      }
+    }
+
+    // Migración: migrar datos existentes de captainId a captainIds
+    try {
+      const rows = await db.all("SELECT id, captainId FROM tables WHERE captainId IS NOT NULL AND captainIds IS NULL");
+      for (const row of rows) {
+        await db.run("UPDATE tables SET captainIds = ? WHERE id = ?", 
+          [JSON.stringify([row.captainId]), row.id]);
+      }
+      if (rows.length > 0) {
+        console.log(`✅ Migrated ${rows.length} tables from captainId to captainIds`);
+      }
+    } catch (err) {
+      console.error("Migration warning (migrate captainId to captainIds):", err.message);
+    }
+
+    // Migración: agregar rotation a tables existentes si no existe
+    try {
+      const tablesInfo = await db.all("PRAGMA table_info(tables)");
+      const hasRotation = tablesInfo.some((col) => col.name === "rotation");
+      if (!hasRotation) {
+        await db.run(`ALTER TABLE tables ADD COLUMN rotation INTEGER DEFAULT 0`);
+        console.log("✅ Column rotation added to existing tables table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (rotation):", err.message);
+      }
+    }
+
     console.log(`${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`);
   } catch (err) {
     console.error(`Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`, err);

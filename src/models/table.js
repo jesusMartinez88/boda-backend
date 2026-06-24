@@ -26,6 +26,18 @@ export const getNextTableName = async () => {
 
 export const getAllTables = async () => {
   const rows = await db.all("SELECT * FROM tables ORDER BY name ASC");
+  // Parse captainIds from JSON string to array
+  if (rows && rows.length > 0) {
+    rows.forEach(row => {
+      if (row.captainIds && typeof row.captainIds === 'string') {
+        try {
+          row.captainIds = JSON.parse(row.captainIds);
+        } catch (e) {
+          row.captainIds = null;
+        }
+      }
+    });
+  }
   return rows || [];
 };
 
@@ -34,20 +46,36 @@ export const getTableByName = async (name) => {
 };
 
 export const getTableById = async (id) => {
-  return await db.get("SELECT * FROM tables WHERE id = ?", [id]);
+  const row = await db.get("SELECT * FROM tables WHERE id = ?", [id]);
+  if (row && row.captainIds && typeof row.captainIds === 'string') {
+    try {
+      row.captainIds = JSON.parse(row.captainIds);
+    } catch (e) {
+      row.captainIds = null;
+    }
+  }
+  return row;
 };
 
 export const createTable = async (tableData) => {
-  const { name, capacity, shape, posX, posY, captainId } = tableData;
+  const { name, capacity, shape, posX, posY, captainId, captainIds, rotation } = tableData;
+  // Handle both captainId (single) and captainIds (array)
+  let captainIdsJson = null;
+  if (captainIds && Array.isArray(captainIds)) {
+    captainIdsJson = JSON.stringify(captainIds);
+  } else if (captainId) {
+    // Legacy support: convert single captainId to array
+    captainIdsJson = JSON.stringify([captainId]);
+  }
   const result = await db.run(
-    "INSERT INTO tables (name, capacity, shape, posX, posY, captainId) VALUES (?, ?, ?, ?, ?, ?)",
-    [name, capacity, shape || "round", posX || 0, posY || 0, captainId ?? null],
+    "INSERT INTO tables (name, capacity, shape, posX, posY, captainIds, rotation) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [name, capacity, shape || "round", posX || 0, posY || 0, captainIdsJson, rotation ?? 0],
   );
   return { id: result.lastID, ...tableData };
 };
 
 export const updateTableById = async (id, tableData) => {
-  const { name, capacity, shape, posX, posY, captainId } = tableData;
+  const { name, capacity, shape, posX, posY, captainId, captainIds, rotation } = tableData;
   const fields = [];
   const params = [];
 
@@ -71,10 +99,29 @@ export const updateTableById = async (id, tableData) => {
     fields.push("posY = ?");
     params.push(posY);
   }
-  // captainId puede ser null (quitar capitán) o un número (asignar)
-  if ("captainId" in tableData) {
-    fields.push("captainId = ?");
-    params.push(captainId ?? null);
+  if (rotation !== undefined) {
+    fields.push("rotation = ?");
+    params.push(rotation);
+  }
+  
+  // Handle captainIds (array format) - new way
+  if ("captainIds" in tableData) {
+    let captainIdsJson = null;
+    if (captainIds && Array.isArray(captainIds)) {
+      captainIdsJson = JSON.stringify(captainIds);
+    }
+    fields.push("captainIds = ?");
+    params.push(captainIdsJson);
+  }
+  
+  // Legacy support: captainId (single) - convert to captainIds array
+  if ("captainId" in tableData && !("captainIds" in tableData)) {
+    let captainIdsJson = null;
+    if (captainId !== null && captainId !== undefined) {
+      captainIdsJson = JSON.stringify([captainId]);
+    }
+    fields.push("captainIds = ?");
+    params.push(captainIdsJson);
   }
 
   if (fields.length === 0) return { id, changes: 0 };
