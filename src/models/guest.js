@@ -221,3 +221,30 @@ export const unassignAllGuestsFromTables = async () => {
   );
   return { changes: result.changes };
 };
+
+// Quita un guestId concreto del captainIds de una mesa específica
+export const removeCaptainFromTable = async (tableId, guestId) => {
+  const table = await db.get("SELECT id, captainIds FROM tables WHERE id = ?", [tableId]);
+  if (!table || !table.captainIds) return;
+
+  let captainIds = table.captainIds;
+  if (typeof captainIds === "string") {
+    try {
+      captainIds = JSON.parse(captainIds);
+    } catch (e) {
+      return;
+    }
+  }
+
+  if (!Array.isArray(captainIds)) return;
+
+    const idx = captainIds.indexOf(Number(guestId));
+  if (idx === -1) return;
+
+  captainIds.splice(idx, 1);
+  const newJson = captainIds.length > 0 ? JSON.stringify(captainIds) : null;
+  await db.run(
+    "UPDATE tables SET captainIds = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+    [newJson, tableId],
+  );
+};

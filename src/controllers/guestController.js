@@ -1,5 +1,6 @@
 import * as Guest from "../models/guest.js";
 import * as Setting from "../models/setting.js";
+import * as Table from "../models/table.js";
 import db from "../db.js";
 import {
   sendNewGuestEmail,
@@ -513,13 +514,35 @@ export const patchGuest = async (req, res) => {
       }
     }
 
+    // Si cambia de mesa, quitar este invitado de captainIds de la mesa anterior
+    let updatedOldTable = null;
+    let updatedNewTable = null;
+    if (partialData.tableId !== undefined) {
+      const oldTableId = existingGuest.tableId;
+      const newTableId = partialData.tableId;
+      if (oldTableId !== null && oldTableId !== undefined && String(oldTableId) !== String(newTableId)) {
+        await Guest.removeCaptainFromTable(oldTableId, id);
+        updatedOldTable = await Table.getTableById(oldTableId);
+        updatedNewTable = await Table.getTableById(newTableId);
+      }
+    }
+
     const updatedGuest = await Guest.patchGuest(id, partialData);
 
-    res.json({
+    const response = {
       success: true,
       data: updatedGuest,
       message: "Guest partially updated successfully",
-    });
+    };
+
+    // Devolver las mesas actualizadas para que el frontend pueda actualizar su estado
+    if (updatedOldTable || updatedNewTable) {
+      response.updatedTables = {};
+      if (updatedOldTable) response.updatedTables[updatedOldTable.id] = updatedOldTable;
+      if (updatedNewTable) response.updatedTables[updatedNewTable.id] = updatedNewTable;
+    }
+
+    res.json(response);
   } catch (error) {
     console.error("Error patching guest:", error);
     res.status(500).json({

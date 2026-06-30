@@ -302,20 +302,6 @@ const initializeTables = async () => {
       }
     }
 
-    // Migración: agregar captainId a tables existentes si no existe
-    try {
-      const tablesInfo = await db.all("PRAGMA table_info(tables)");
-      const hasCaptainId = tablesInfo.some(col => col.name === "captainId");
-      if (!hasCaptainId) {
-        await db.run(`ALTER TABLE tables ADD COLUMN captainId INTEGER`);
-        console.log("✅ Column captainId added to existing tables table");
-      }
-    } catch (err) {
-      if (!err.message?.includes("duplicate column")) {
-        console.error("Migration warning (captainId):", err.message);
-      }
-    }
-
     // Migración: agregar captainIds a tables (para múltiples capitanes)
     try {
       const tablesInfo = await db.all("PRAGMA table_info(tables)");
@@ -330,18 +316,18 @@ const initializeTables = async () => {
       }
     }
 
-    // Migración: migrar datos existentes de captainId a captainIds
+    // Migración: quitar columna captainId legacy
     try {
-      const rows = await db.all("SELECT id, captainId FROM tables WHERE captainId IS NOT NULL AND captainIds IS NULL");
-      for (const row of rows) {
-        await db.run("UPDATE tables SET captainIds = ? WHERE id = ?", 
-          [JSON.stringify([row.captainId]), row.id]);
-      }
-      if (rows.length > 0) {
-        console.log(`✅ Migrated ${rows.length} tables from captainId to captainIds`);
+      const tablesInfo = await db.all("PRAGMA table_info(tables)");
+      const hasCaptainId = tablesInfo.some(col => col.name === "captainId");
+      if (hasCaptainId) {
+        await db.run(`ALTER TABLE tables DROP COLUMN captainId`);
+        console.log("✅ Column captainId dropped from tables table");
       }
     } catch (err) {
-      console.error("Migration warning (migrate captainId to captainIds):", err.message);
+      if (!err.message?.includes("no such column")) {
+        console.error("Migration warning (drop captainId):", err.message);
+      }
     }
 
     // Migración: agregar rotation a tables existentes si no existe
