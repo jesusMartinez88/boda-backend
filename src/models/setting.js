@@ -7,8 +7,10 @@ export const getSetting = async (key) => {
 
 export const updateSetting = async (key, value) => {
   const result = await db.run(
-    "UPDATE settings SET value = ?, updatedAt = CURRENT_TIMESTAMP WHERE key = ?",
-    [value, key],
+    `INSERT INTO settings (key, value, updatedAt)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = CURRENT_TIMESTAMP`,
+    [key, value],
   );
   return { key, value, changes: result.changes };
 };

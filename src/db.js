@@ -2,7 +2,9 @@ import { createClient } from "@libsql/client";
 import bcrypt from "bcryptjs";
 
 const isProduction = process.env.NODE_ENV === "production";
-const url = isProduction ? process.env.TURSO_DATABASE_URL : (process.env.DB_PATH || "file:data/wedding.db");
+const url = isProduction
+  ? process.env.TURSO_DATABASE_URL
+  : process.env.DB_PATH || "file:data/wedding.db";
 const authToken = isProduction ? process.env.TURSO_AUTH_TOKEN : undefined;
 
 if (isProduction && !url) {
@@ -10,7 +12,9 @@ if (isProduction && !url) {
   process.exit(1);
 }
 
-console.log(`Using ${isProduction ? "Turso" : "local SQLite"} database: ${url}`);
+console.log(
+  `Using ${isProduction ? "Turso" : "local SQLite"} database: ${url}`,
+);
 
 const client = createClient({
   url: url,
@@ -75,12 +79,14 @@ const db = {
   // Método de conveniencia para ejecutar SQL crudo
   execute: async (sql, params = []) => {
     return await client.execute({ sql, args: params });
-  }
+  },
 };
 
 const initializeTables = async () => {
   try {
-    console.log(`Initializing ${isProduction ? "Turso" : "local SQLite"} database tables...`);
+    console.log(
+      `Initializing ${isProduction ? "Turso" : "local SQLite"} database tables...`,
+    );
 
     // Tabla de invitados
     await db.run(`
@@ -113,9 +119,18 @@ const initializeTables = async () => {
     `);
 
     // Inicializar configuraciones por defecto
-    await db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('total_estimated_guests', '0')");
-    await db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_guests_per_table', '10')");
-    await db.run("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_assign_tables', '0')");
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('total_estimated_guests', '0')",
+    );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('max_guests_per_table', '10')",
+    );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_assign_tables', '0')",
+    );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_highchairs', '0')",
+    );
 
     // Tabla de mesas
     await db.run(`
@@ -173,14 +188,15 @@ const initializeTables = async () => {
     const adminUsername = process.env.ADMIN_USERNAME || "admin";
     const adminPassword = process.env.ADMIN_PASSWORD;
     if (adminPassword) {
-      const user = await db.get("SELECT id FROM users WHERE username = ?", [adminUsername]);
+      const user = await db.get("SELECT id FROM users WHERE username = ?", [
+        adminUsername,
+      ]);
       if (!user) {
         const hashedPassword = bcrypt.hashSync(adminPassword, 10);
-        await db.run("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", [
-          adminUsername,
-          hashedPassword,
-          "admin",
-        ]);
+        await db.run(
+          "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+          [adminUsername, hashedPassword, "admin"],
+        );
         console.log(`Default user '${adminUsername}' created`);
       }
     }
@@ -244,8 +260,12 @@ const initializeTables = async () => {
 
     // Insertar categorías por defecto si no existen
     try {
-      await db.run("INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novio', 'novio')");
-      await db.run("INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novia', 'novia')");
+      await db.run(
+        "INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novio', 'novio')",
+      );
+      await db.run(
+        "INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novia', 'novia')",
+      );
     } catch (e) {}
 
     // Tabla de contactos para invitaciones (sin restricción de side)
@@ -269,10 +289,14 @@ const initializeTables = async () => {
     // Solo intentar si la tabla ya existía (verificar si tiene la columna)
     try {
       const tableInfo = await db.all("PRAGMA table_info(contacts)");
-      const hasCountryCode = tableInfo.some(col => col.name === "country_code");
-      
+      const hasCountryCode = tableInfo.some(
+        (col) => col.name === "country_code",
+      );
+
       if (!hasCountryCode) {
-        await db.run(`ALTER TABLE contacts ADD COLUMN country_code TEXT DEFAULT '+34' NOT NULL`);
+        await db.run(
+          `ALTER TABLE contacts ADD COLUMN country_code TEXT DEFAULT '+34' NOT NULL`,
+        );
         console.log("✅ Column country_code added to existing contacts table");
       }
     } catch (err) {
@@ -285,12 +309,20 @@ const initializeTables = async () => {
     // Migración: agregar invitation_status y responded_at a contactos existentes
     try {
       const tableInfo = await db.all("PRAGMA table_info(contacts)");
-      const hasInvitationStatus = tableInfo.some(col => col.name === "invitation_status");
-      const hasRespondedAt = tableInfo.some(col => col.name === "responded_at");
-      
+      const hasInvitationStatus = tableInfo.some(
+        (col) => col.name === "invitation_status",
+      );
+      const hasRespondedAt = tableInfo.some(
+        (col) => col.name === "responded_at",
+      );
+
       if (!hasInvitationStatus) {
-        await db.run(`ALTER TABLE contacts ADD COLUMN invitation_status TEXT DEFAULT 'not_sent'`);
-        console.log("✅ Column invitation_status added to existing contacts table");
+        await db.run(
+          `ALTER TABLE contacts ADD COLUMN invitation_status TEXT DEFAULT 'not_sent'`,
+        );
+        console.log(
+          "✅ Column invitation_status added to existing contacts table",
+        );
       }
       if (!hasRespondedAt) {
         await db.run(`ALTER TABLE contacts ADD COLUMN responded_at DATETIME`);
@@ -305,7 +337,7 @@ const initializeTables = async () => {
     // Migración: agregar captainIds a tables (para múltiples capitanes)
     try {
       const tablesInfo = await db.all("PRAGMA table_info(tables)");
-      const hasCaptainIds = tablesInfo.some(col => col.name === "captainIds");
+      const hasCaptainIds = tablesInfo.some((col) => col.name === "captainIds");
       if (!hasCaptainIds) {
         await db.run(`ALTER TABLE tables ADD COLUMN captainIds TEXT`);
         console.log("✅ Column captainIds added to existing tables table");
@@ -319,7 +351,7 @@ const initializeTables = async () => {
     // Migración: quitar columna captainId legacy
     try {
       const tablesInfo = await db.all("PRAGMA table_info(tables)");
-      const hasCaptainId = tablesInfo.some(col => col.name === "captainId");
+      const hasCaptainId = tablesInfo.some((col) => col.name === "captainId");
       if (hasCaptainId) {
         await db.run(`ALTER TABLE tables DROP COLUMN captainId`);
         console.log("✅ Column captainId dropped from tables table");
@@ -335,7 +367,9 @@ const initializeTables = async () => {
       const tablesInfo = await db.all("PRAGMA table_info(tables)");
       const hasRotation = tablesInfo.some((col) => col.name === "rotation");
       if (!hasRotation) {
-        await db.run(`ALTER TABLE tables ADD COLUMN rotation INTEGER DEFAULT 0`);
+        await db.run(
+          `ALTER TABLE tables ADD COLUMN rotation INTEGER DEFAULT 0`,
+        );
         console.log("✅ Column rotation added to existing tables table");
       }
     } catch (err) {
@@ -344,9 +378,14 @@ const initializeTables = async () => {
       }
     }
 
-    console.log(`${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`);
+    console.log(
+      `${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`,
+    );
   } catch (err) {
-    console.error(`Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`, err);
+    console.error(
+      `Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`,
+      err,
+    );
   }
 };
 
