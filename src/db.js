@@ -141,6 +141,7 @@ const initializeTables = async () => {
         shape TEXT DEFAULT 'round',
         posX REAL DEFAULT 0,
         posY REAL DEFAULT 0,
+        highchairs INTEGER DEFAULT 0,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -375,6 +376,22 @@ const initializeTables = async () => {
     } catch (err) {
       if (!err.message?.includes("duplicate column")) {
         console.error("Migration warning (rotation):", err.message);
+      }
+    }
+
+    // Migración: agregar highchairs a tables existentes si no existe
+    try {
+      const tablesInfo = await db.all("PRAGMA table_info(tables)");
+      const hasHighchairs = tablesInfo.some((col) => col.name === "highchairs");
+      if (!hasHighchairs) {
+        await db.run(
+          `ALTER TABLE tables ADD COLUMN highchairs INTEGER DEFAULT 0`,
+        );
+        console.log("✅ Column highchairs added to existing tables table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (highchairs):", err.message);
       }
     }
 

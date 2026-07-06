@@ -28,8 +28,8 @@ export const getAllTables = async () => {
   const rows = await db.all("SELECT * FROM tables ORDER BY name ASC");
   // Parse captainIds from JSON string to array
   if (rows && rows.length > 0) {
-    rows.forEach(row => {
-      if (row.captainIds && typeof row.captainIds === 'string') {
+    rows.forEach((row) => {
+      if (row.captainIds && typeof row.captainIds === "string") {
         try {
           row.captainIds = JSON.parse(row.captainIds);
         } catch (e) {
@@ -47,7 +47,7 @@ export const getTableByName = async (name) => {
 
 export const getTableById = async (id) => {
   const row = await db.get("SELECT * FROM tables WHERE id = ?", [id]);
-  if (row && row.captainIds && typeof row.captainIds === 'string') {
+  if (row && row.captainIds && typeof row.captainIds === "string") {
     try {
       row.captainIds = JSON.parse(row.captainIds);
     } catch (e) {
@@ -58,21 +58,45 @@ export const getTableById = async (id) => {
 };
 
 export const createTable = async (tableData) => {
-  const { name, capacity, shape, posX, posY, captainIds, rotation } = tableData;
+  const {
+    name,
+    capacity,
+    shape,
+    posX,
+    posY,
+    captainIds,
+    rotation,
+    highchairs,
+  } = tableData;
   let captainIdsJson = null;
   if (captainIds && Array.isArray(captainIds)) {
     captainIdsJson = JSON.stringify(captainIds);
   }
   const result = await db.run(
-    "INSERT INTO tables (name, capacity, shape, posX, posY, captainIds, rotation) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [name, capacity, shape || "round", posX || 0, posY || 0, captainIdsJson, rotation ?? 0],
+    "INSERT INTO tables (name, capacity, shape, posX, posY, captainIds, rotation, highchairs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      name,
+      capacity,
+      shape || "round",
+      posX || 0,
+      posY || 0,
+      captainIdsJson,
+      rotation ?? 0,
+      highchairs ?? 0,
+    ],
   );
   return { id: result.lastID, ...tableData };
 };
 
 // Quita un captainId de TODAS las mesas excepto la mesa excludedId
-export const removeCaptainFromAllOtherTables = async (captainId, excludedTableId) => {
-  const tables = await db.all("SELECT id, captainIds FROM tables WHERE id != ?", [excludedTableId]);
+export const removeCaptainFromAllOtherTables = async (
+  captainId,
+  excludedTableId,
+) => {
+  const tables = await db.all(
+    "SELECT id, captainIds FROM tables WHERE id != ?",
+    [excludedTableId],
+  );
 
   for (const table of tables) {
     if (!table.captainIds) continue;
@@ -101,7 +125,16 @@ export const removeCaptainFromAllOtherTables = async (captainId, excludedTableId
 };
 
 export const updateTableById = async (id, tableData) => {
-  const { name, capacity, shape, posX, posY, captainIds, rotation } = tableData;
+  const {
+    name,
+    capacity,
+    shape,
+    posX,
+    posY,
+    captainIds,
+    rotation,
+    highchairs,
+  } = tableData;
   const fields = [];
   const params = [];
 
@@ -129,10 +162,17 @@ export const updateTableById = async (id, tableData) => {
     fields.push("rotation = ?");
     params.push(rotation);
   }
+  if (highchairs !== undefined) {
+    fields.push("highchairs = ?");
+    params.push(highchairs);
+  }
 
   if ("captainIds" in tableData) {
     // Obtener los captains actuales de esta mesa ANTES de actualizar
-    const oldTable = await db.get("SELECT captainIds FROM tables WHERE id = ?", [id]);
+    const oldTable = await db.get(
+      "SELECT captainIds FROM tables WHERE id = ?",
+      [id],
+    );
     let oldCaptainIds = [];
     if (oldTable && oldTable.captainIds) {
       try {
@@ -142,7 +182,8 @@ export const updateTableById = async (id, tableData) => {
 
     let captainIdsJson = null;
     if (Array.isArray(captainIds)) {
-      captainIdsJson = captainIds.length > 0 ? JSON.stringify(captainIds) : null;
+      captainIdsJson =
+        captainIds.length > 0 ? JSON.stringify(captainIds) : null;
 
       // 1) Quitar captains ANTERIORES de esta mesa de cualquier otra tabla
       for (const cid of oldCaptainIds) {
@@ -158,7 +199,9 @@ export const updateTableById = async (id, tableData) => {
     params.push(captainIdsJson);
   }
 
-  if (fields.length === 0) return { id, changes: 0 };
+  if (fields.length === 0) {
+    return { id, changes: 0, skipped: true };
+  }
 
   params.push(id);
 

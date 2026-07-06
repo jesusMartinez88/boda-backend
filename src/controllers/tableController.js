@@ -105,7 +105,23 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, capacity, shape, posX, posY, captainIds, rotation } = req.body;
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const source =
+      payload.table && typeof payload.table === "object"
+        ? payload.table
+        : payload.data && typeof payload.data === "object"
+          ? payload.data
+          : payload;
+    const {
+      name,
+      capacity,
+      shape,
+      posX,
+      posY,
+      captainIds,
+      rotation,
+      highchairs,
+    } = source;
 
     const existingTable = await Table.getTableById(id);
     if (!existingTable) {
@@ -142,12 +158,18 @@ export const updateTable = async (req, res) => {
       updateData.rotation = rotation;
     }
 
+    if (highchairs !== undefined) {
+      updateData.highchairs = Number.isNaN(parseInt(highchairs, 10))
+        ? highchairs
+        : parseInt(highchairs, 10);
+    }
+
     if ("captainIds" in req.body) {
       updateData.captainIds = captainIds ?? null;
     }
 
     const result = await Table.updateTableById(id, updateData);
-    if (result.changes === 0) {
+    if (result.skipped) {
       return res.status(400).json({
         success: false,
         error: "No fields to update",
