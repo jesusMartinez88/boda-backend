@@ -13,6 +13,7 @@ import contactRoutes from "./routes/contacts.js";
 import categoryRoutes from "./routes/categories.js";
 import musicPlaylistRoutes from "./routes/music-playlist.routes.js";
 import { initializeEmailService } from "./services/emailService.js";
+import { initializeWhatsAppService } from "./services/whatsappService.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import jwt from "jsonwebtoken";
@@ -22,6 +23,7 @@ import { logError } from "./utils/logger.js";
 const app = express();
 
 initializeEmailService();
+initializeWhatsAppService();
 
 const isProduction = process.env.NODE_ENV === "production";
 

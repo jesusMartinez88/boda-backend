@@ -7,6 +7,7 @@ import {
   sendGuestConfirmationEmail,
   sendDeleteCodeEmail,
 } from "../services/emailService.js";
+import { sendNewGuestWhatsApp } from "../services/whatsappService.js";
 import { validateFields, sanitizeObject, isValidEmail, FIELD_LIMITS } from "../utils/validation.js";
 
 const dbAll = db.all;
@@ -377,6 +378,16 @@ export const createGuest = async (req, res) => {
     if (sendEmail !== false) {
       // Enviar email al propietario (solo para el principal)
       await sendNewGuestEmail(mainGuest, numAdults, numChildren);
+    }
+
+    // Notificación WhatsApp al propietario (CallMeBot). Se decide en base a
+    // la setting `enable_whatsapp`; el servicio filtra internamente si falta
+    // la api key o el phone. Fire-and-forget: cualquier error se loguea
+    // pero no afecta a la creación del invitado.
+    if (sendEmail !== false) {
+      sendNewGuestWhatsApp(mainGuest, numAdults, numChildren).catch((err) =>
+        console.error("WhatsApp notification error:", err),
+      );
     }
 
     // Opcionalmente enviar confirmación al invitado

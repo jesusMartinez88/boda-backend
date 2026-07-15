@@ -131,6 +131,15 @@ const initializeTables = async () => {
     await db.run(
       "INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_highchairs', '0')",
     );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_whatsapp', '0')",
+    );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('whatsapp_apikey', '')",
+    );
+    await db.run(
+      "INSERT OR IGNORE INTO settings (key, value) VALUES ('whatsapp_phone', '')",
+    );
 
     // Tabla de mesas
     await db.run(`

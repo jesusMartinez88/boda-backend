@@ -1,7 +1,7 @@
 import * as Setting from "../models/setting.js";
 
 const parseSettingValue = (key, value) => {
-  const booleanKeys = ["auto_assign_tables", "enable_highchairs"];
+  const booleanKeys = ["auto_assign_tables", "enable_highchairs", "enable_whatsapp"];
   const integerKeys = ["max_guests_per_table", "total_estimated_guests"];
 
   if (booleanKeys.includes(key)) {
@@ -23,7 +23,7 @@ const parseSettingValue = (key, value) => {
 };
 
 const serializeSettingValue = (key, value) => {
-  const booleanKeys = ["auto_assign_tables", "enable_highchairs"];
+  const booleanKeys = ["auto_assign_tables", "enable_highchairs", "enable_whatsapp"];
 
   if (booleanKeys.includes(key)) {
     return value === true ||
