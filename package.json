@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "type": "module",
   "engines": {
-    "node": "24.16.0"
+    "node": "24.18.0"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -21,9 +21,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.84",
+    "@ai-sdk/openai": "^4.0.15",
     "@libsql/client": "^0.17.4",
-    "ai": "^7.0.28",
+    "ai": "^7.0.29",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
