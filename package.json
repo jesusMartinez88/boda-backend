@@ -23,7 +23,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.15",
     "@libsql/client": "^0.17.4",
-    "ai": "^7.0.29",
+    "ai": "^7.0.37",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
