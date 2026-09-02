@@ -5,7 +5,6 @@ import { sendDeleteCodeEmail } from "../services/emailService.js";
 
 const mapTableResponse = (table) => {
   if (!table) return null;
-  // Ya no necesitamos mapear 'number' a 'name' porque 'name' ya viene de la BD
   return table;
 };
 
@@ -14,12 +13,13 @@ let pendingDeleteCode = null;
 let pendingDeleteExpiry = null;
 
 const generateDeleteCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString(); // 6 dígitos
+  return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
 export const getTables = async (req, res) => {
   try {
-    const allTables = await Table.getAllTables();
+    const userId = req.userContext.userId;
+    const allTables = await Table.getAllTables(userId);
 
     res.json({
       success: true,
@@ -38,7 +38,8 @@ export const getTables = async (req, res) => {
 export const getTable = async (req, res) => {
   try {
     const { id } = req.params;
-    const table = await Table.getTableById(id);
+    const userId = req.userContext.userId;
+    const table = await Table.getTableById(id, userId);
     if (!table) {
       return res.status(404).json({
         success: false,
@@ -62,14 +63,15 @@ export const getTable = async (req, res) => {
 export const createTable = async (req, res) => {
   try {
     const { name, capacity, shape, posX, posY } = req.body;
+    const userId = req.userContext.userId;
 
-    // Si no se proporciona nombre, generamos uno correlativo "Mesa X"
     let tableName = name;
     if (!tableName) {
-      tableName = await Table.getNextTableName();
+      tableName = await Table.getNextTableName(userId);
     }
 
     const tableToCreate = {
+      userId,
       name: tableName,
       capacity: capacity || 10,
       shape: shape || "round",
@@ -105,6 +107,7 @@ export const createTable = async (req, res) => {
 export const updateTable = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
     const payload = req.body && typeof req.body === "object" ? req.body : {};
     const source =
       payload.table && typeof payload.table === "object"
@@ -123,7 +126,7 @@ export const updateTable = async (req, res) => {
       highchairs,
     } = source;
 
-    const existingTable = await Table.getTableById(id);
+    const existingTable = await Table.getTableById(id, userId);
     if (!existingTable) {
       return res.status(404).json({
         success: false,
@@ -131,10 +134,17 @@ export const updateTable = async (req, res) => {
       });
     }
 
-    // Validación: verificar cada capitán
+    // Ownership validation
+    if (existingTable.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     if (captainIds && Array.isArray(captainIds)) {
       for (const cid of captainIds) {
-        const captain = await Guest.getGuestById(cid);
+        const captain = await Guest.getGuestById(cid, userId);
         if (!captain) {
           return res.status(404).json({
             success: false,
@@ -168,7 +178,7 @@ export const updateTable = async (req, res) => {
       updateData.captainIds = captainIds ?? null;
     }
 
-    const result = await Table.updateTableById(id, updateData);
+    const result = await Table.updateTableById(id, updateData, userId);
     if (result.skipped) {
       return res.status(400).json({
         success: false,
@@ -176,7 +186,7 @@ export const updateTable = async (req, res) => {
       });
     }
 
-    const updatedTable = await Table.getTableById(id);
+    const updatedTable = await Table.getTableById(id, userId);
     res.json({
       success: true,
       data: mapTableResponse(updatedTable),
@@ -203,9 +213,9 @@ export const updateTable = async (req, res) => {
 export const deleteTable = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
 
-    // 1. Obtener la mesa para verificar que existe
-    const table = await Table.getTableById(id);
+    const table = await Table.getTableById(id, userId);
     if (!table) {
       return res.status(404).json({
         success: false,
@@ -213,13 +223,18 @@ export const deleteTable = async (req, res) => {
       });
     }
 
+    // Ownership validation
+    if (table.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     const tableName = table.name;
 
-    // 2. Desasignar a los invitados de esta mesa (usando el ID de la mesa)
-    const unassignResult = await Guest.unassignGuestsFromTable(id);
-
-    // 3. Borrar la configuración de la mesa por ID
-    const configResult = await Table.deleteTableById(id);
+    const unassignResult = await Guest.unassignGuestsFromTable(id, userId);
+    const configResult = await Table.deleteTableById(id, userId);
 
     res.json({
       success: true,
@@ -241,20 +256,15 @@ export const deleteTable = async (req, res) => {
   }
 };
 
-// solicita envío de código de confirmación para borrado de todas las mesas
 export const requestDeleteCode = async (req, res) => {
   try {
-    // generar y guardar código con expiración (15 minutos)
     pendingDeleteCode = generateDeleteCode();
     pendingDeleteExpiry = Date.now() + 15 * 60 * 1000;
 
-    // log para desarrollo
     console.log("🔐 Código de borrado de mesas generado:", pendingDeleteCode);
 
-    // enviar correo al dueño
     await sendDeleteCodeEmail(pendingDeleteCode);
 
-    // en desarrollo devolvemos el código tambien para facilitar pruebas
     const responsePayload = {
       success: true,
       message: "Confirmation code sent via email",
@@ -273,10 +283,11 @@ export const requestDeleteCode = async (req, res) => {
   }
 };
 
-// controlador para borrar todas las mesas
 export const deleteAllTables = async (req, res) => {
   try {
     const { code } = req.query;
+    const userId = req.userContext.userId;
+
     if (!code) {
       return res.status(400).json({
         success: false,
@@ -298,14 +309,12 @@ export const deleteAllTables = async (req, res) => {
       });
     }
 
-    // resetear código para evitar reutilización
     pendingDeleteCode = null;
     pendingDeleteExpiry = null;
 
-    // antes de borrar las mesas, desasignar todos los invitados
-    await Guest.unassignAllGuestsFromTables();
+    await Guest.unassignAllGuestsFromTables(userId);
 
-    const result = await Table.deleteAllTables();
+    const result = await Table.deleteAllTables(userId);
     res.json({
       success: true,
       data: result,

@@ -5,12 +5,13 @@ import { validateFields, sanitizeObject, FIELD_LIMITS } from "../utils/validatio
 
 export const getContacts = async (req, res) => {
   try {
+    const userId = req.userContext.userId;
     const { side, linkSent } = req.query;
     const filters = {};
     if (side) filters.side = side;
     if (linkSent !== undefined) filters.linkSent = linkSent === "true" || linkSent === "1";
 
-    const contacts = await ContactModel.getAllContacts(filters);
+    const contacts = await ContactModel.getAllContacts(filters, userId);
     res.json({ success: true, data: contacts });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -51,6 +52,7 @@ const isValidCountryCode = (countryCode) => {
 export const createContact = async (req, res) => {
   try {
     const contactData = req.body;
+    const userId = req.userContext.userId;
 
     const validate = (data) => {
       // Validar campos obligatorios
@@ -87,11 +89,12 @@ export const createContact = async (req, res) => {
 
     if (Array.isArray(contactData)) {
       contactData.forEach(validate);
-      const result = await ContactModel.createContactsBulk(contactData);
+      const result = await ContactModel.createContactsBulk(contactData, userId);
       return res.status(201).json({ success: true, data: result });
     }
 
     validate(contactData);
+    contactData.userId = userId;
     const newContact = await ContactModel.createContact(contactData);
     res.status(201).json({ success: true, data: newContact });
   } catch (error) {
@@ -104,7 +107,19 @@ export const createContact = async (req, res) => {
 export const patchContact = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await ContactModel.patchContact(id, req.body);
+    const userId = req.userContext.userId;
+    
+    // Verificar ownership antes de actualizar
+    const existing = await ContactModel.getContactById(id, userId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Contact not found" });
+    }
+    
+    if (existing.userId !== userId) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+    
+    const updated = await ContactModel.patchContact(id, req.body, userId);
     res.json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -114,7 +129,19 @@ export const patchContact = async (req, res) => {
 export const deleteContact = async (req, res) => {
   try {
     const { id } = req.params;
-    await ContactModel.deleteContact(id);
+    const userId = req.userContext.userId;
+    
+    // Verificar ownership antes de eliminar
+    const existing = await ContactModel.getContactById(id, userId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Contact not found" });
+    }
+    
+    if (existing.userId !== userId) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+    
+    await ContactModel.deleteContact(id, userId);
     res.json({ success: true, message: "Contact deleted" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

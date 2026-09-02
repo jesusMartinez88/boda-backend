@@ -16,7 +16,8 @@ const sendError = (res, status, message, code) => {
 
 export const getPlaylist = async (req, res) => {
   try {
-    const songs = await playlistService.listMusicPlaylist();
+    const userId = req.userContext.userId;
+    const songs = await playlistService.listMusicPlaylist(userId);
     return res.status(200).json({
       success: true,
       data: songs,
@@ -28,13 +29,14 @@ export const getPlaylist = async (req, res) => {
 };
 
 export const createSong = async (req, res) => {
+  const userId = req.userContext.userId;
   const validation = validateCreatePayload(req.body);
   if (validation.error) {
     return sendError(res, 400, validation.error, validation.code);
   }
 
   try {
-    const song = await playlistService.createMusicSong(validation.value);
+    const song = await playlistService.createMusicSong(validation.value, userId);
     return res.status(201).json({
       success: true,
       data: song,
@@ -46,6 +48,7 @@ export const createSong = async (req, res) => {
 };
 
 export const patchSong = async (req, res) => {
+  const userId = req.userContext.userId;
   const idValidation = validateIdParam(req.params.id);
   if (idValidation.error) {
     return sendError(res, 400, idValidation.error, idValidation.code);
@@ -57,7 +60,7 @@ export const patchSong = async (req, res) => {
   }
 
   try {
-    const song = await playlistService.patchMusicSong(idValidation.value, bodyValidation.value);
+    const song = await playlistService.patchMusicSong(idValidation.value, bodyValidation.value, userId);
     return res.status(200).json({
       success: true,
       data: song,
@@ -72,13 +75,14 @@ export const patchSong = async (req, res) => {
 };
 
 export const deleteSong = async (req, res) => {
+  const userId = req.userContext.userId;
   const idValidation = validateIdParam(req.params.id);
   if (idValidation.error) {
     return sendError(res, 400, idValidation.error, idValidation.code);
   }
 
   try {
-    await playlistService.removeMusicSong(idValidation.value);
+    await playlistService.removeMusicSong(idValidation.value, userId);
     return res.status(200).json({
       success: true,
       data: { deletedId: idValidation.value },
@@ -93,13 +97,14 @@ export const deleteSong = async (req, res) => {
 };
 
 export const reorderSongs = async (req, res) => {
+  const userId = req.userContext.userId;
   const validation = validateReorderPayload(req.body);
   if (validation.error) {
     return sendError(res, 400, validation.error, validation.code);
   }
 
   try {
-    const songs = await playlistService.reorderMusicPlaylist(validation.value);
+    const songs = await playlistService.reorderMusicPlaylist(validation.value, userId);
     return res.status(200).json({
       success: true,
       data: songs,

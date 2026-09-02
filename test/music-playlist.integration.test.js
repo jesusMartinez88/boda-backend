@@ -9,7 +9,7 @@ process.env.DB_PATH = process.env.DB_PATH || "file:data/wedding.test.db";
 const { default: app } = await import("../src/app.js");
 const { default: db } = await import("../src/db.js");
 
-const token = jwt.sign({ userId: 1, role: "admin" }, process.env.JWT_SECRET, { expiresIn: "1h" });
+const token = jwt.sign({ id: 1, userId: 1, role: "admin", slug: "admin" }, process.env.JWT_SECRET, { expiresIn: "1h" });
 const authHeaders = {
   Authorization: `Bearer ${token}`,
   "Content-Type": "application/json",

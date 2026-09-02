@@ -1,7 +1,8 @@
 import * as Finance from "../models/finance.js";
 
 export const getFinances = async (req, res) => {
-  const finances = await Finance.getAllFinances();
+  const userId = req.userContext.userId;
+  const finances = await Finance.getAllFinances(userId);
   res.json({
     success: true,
     data: finances,
@@ -11,13 +12,26 @@ export const getFinances = async (req, res) => {
 
 export const getFinance = async (req, res) => {
   const { id } = req.params;
-  const finance = await Finance.getFinanceById(id);
-  if (!finance) {
+  const userId = req.userContext.userId;
+
+  // First check if the record exists
+  const existingRecord = await Finance.checkFinanceExists(id);
+  if (!existingRecord) {
     return res.status(404).json({
       success: false,
       error: "Finance record not found",
     });
   }
+
+  // Ownership validation
+  if (existingRecord.userId !== userId) {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden",
+    });
+  }
+
+  const finance = await Finance.getFinanceById(id, userId);
   res.json({
     success: true,
     data: finance,
@@ -26,13 +40,15 @@ export const getFinance = async (req, res) => {
 
 export const createFinance = async (req, res) => {
   const { description, amount, type, category, date, paidBy } = req.body;
+  const userId = req.userContext.userId;
+
   if (!description || amount === undefined || !type) {
     return res.status(400).json({
       success: false,
       error: "Description, amount and type are required",
     });
   }
-  const newFinance = await Finance.createFinance({ description, amount, type, category, date, paidBy });
+  const newFinance = await Finance.createFinance({ userId, description, amount, type, category, date, paidBy });
   res.status(201).json({
     success: true,
     data: newFinance,
@@ -42,15 +58,28 @@ export const createFinance = async (req, res) => {
 
 export const updateFinance = async (req, res) => {
   const { id } = req.params;
+  const userId = req.userContext.userId;
   const { description, amount, type, category, date, paidBy } = req.body;
   
-  const existing = await Finance.getFinanceById(id);
-  if (!existing) {
+  // First check if the record exists
+  const existingRecord = await Finance.checkFinanceExists(id);
+  if (!existingRecord) {
     return res.status(404).json({
       success: false,
       error: "Finance record not found",
     });
   }
+
+  // Ownership validation
+  if (existingRecord.userId !== userId) {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden",
+    });
+  }
+
+  // Get full record for defaults
+  const existing = await Finance.getFinanceById(id, userId);
 
   const updated = await Finance.updateFinance(id, {
     description,
@@ -59,7 +88,7 @@ export const updateFinance = async (req, res) => {
     category,
     date: date || existing.date,
     paidBy,
-  });
+  }, userId);
 
   res.json({
     success: true,
@@ -70,14 +99,26 @@ export const updateFinance = async (req, res) => {
 
 export const deleteFinance = async (req, res) => {
   const { id } = req.params;
-  const existing = await Finance.getFinanceById(id);
-  if (!existing) {
+  const userId = req.userContext.userId;
+
+  // First check if the record exists
+  const existingRecord = await Finance.checkFinanceExists(id);
+  if (!existingRecord) {
     return res.status(404).json({
       success: false,
       error: "Finance record not found",
     });
   }
-  await Finance.deleteFinance(id);
+
+  // Ownership validation
+  if (existingRecord.userId !== userId) {
+    return res.status(403).json({
+      success: false,
+      error: "Forbidden",
+    });
+  }
+
+  await Finance.deleteFinance(id, userId);
   res.json({
     success: true,
     message: "Finance record deleted successfully",

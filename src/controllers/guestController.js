@@ -8,7 +8,12 @@ import {
   sendDeleteCodeEmail,
 } from "../services/emailService.js";
 import { sendNewGuestWhatsApp } from "../services/whatsappService.js";
-import { validateFields, sanitizeObject, isValidEmail, FIELD_LIMITS } from "../utils/validation.js";
+import {
+  validateFields,
+  sanitizeObject,
+  isValidEmail,
+  FIELD_LIMITS,
+} from "../utils/validation.js";
 
 const dbAll = db.all;
 
@@ -20,27 +25,28 @@ const generateDeleteCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const assignRandomTable = async (neededSpace = 1) => {
+const assignRandomTable = async (neededSpace = 1, userId) => {
   try {
-    // 1. Obtener capacidad máxima global por defecto
-    const globalMaxStr = await Setting.getSetting("max_guests_per_table");
+    const globalMaxStr = await Setting.getSetting(
+      "max_guests_per_table",
+      userId,
+    );
     const globalMax = parseInt(globalMaxStr || "10", 10);
 
-    // 2. Obtener definiciones de mesas específicas
     const tableDefinitions = await dbAll(
-      "SELECT id, name, capacity FROM tables",
+      "SELECT id, name, capacity FROM tables WHERE userId = ?",
+      [userId],
     );
     const tableInfo = {};
     tableDefinitions.forEach((t) => {
       tableInfo[t.id] = { name: t.name, capacity: t.capacity || globalMax };
     });
 
-    // 3. Obtener ocupación actual de las mesas
     const tableCounts = await dbAll(
-      "SELECT tableId, COUNT(*) as count FROM guests WHERE tableId IS NOT NULL GROUP BY tableId",
+      "SELECT tableId, COUNT(*) as count FROM guests WHERE userId = ? AND tableId IS NOT NULL GROUP BY tableId",
+      [userId],
     );
 
-    // 4. Identificar ocupación
     const currentOccupancy = {};
     tableCounts.forEach((t) => {
       currentOccupancy[t.tableId] = t.count;
@@ -57,13 +63,9 @@ const assignRandomTable = async (neededSpace = 1) => {
     });
 
     if (availableTableIds.length > 0) {
-      // 5. Seleccionar una mesa aleatoria con espacio
       const randomIndex = Math.floor(Math.random() * availableTableIds.length);
       return parseInt(availableTableIds[randomIndex], 10);
     } else {
-      // 6. Si no hay mesas configuradas con espacio, devolver null o crear una si existiera lógica de creación automática
-      // Nota: El sistema ahora es ID-based, así que necesitamos que la mesa EXISTA en la tabla 'tables' primero.
-      // Si no hay ninguna mesa, devolvemos null por defecto.
       return tableDefinitions.length > 0 ? tableDefinitions[0].id : null;
     }
   } catch (error) {
@@ -72,28 +74,29 @@ const assignRandomTable = async (neededSpace = 1) => {
   }
 };
 
-// Asignar una lista de asientos libres dentro de una mesa concreta
-const assignSeatsForTable = async (tableId, neededSeats = 1) => {
+const assignSeatsForTable = async (tableId, neededSeats = 1, userId) => {
   if (!tableId || neededSeats <= 0) return [];
 
   try {
-    // 1. Obtener capacidad de la mesa (o usar capacidad global por defecto)
-    const globalMaxStr = await Setting.getSetting("max_guests_per_table");
+    const globalMaxStr = await Setting.getSetting(
+      "max_guests_per_table",
+      userId,
+    );
     const globalMax = parseInt(globalMaxStr || "10", 10);
 
-    const tableRows = await dbAll("SELECT capacity FROM tables WHERE id = ?", [
-      tableId,
-    ]);
+    const tableRows = await dbAll(
+      "SELECT capacity FROM tables WHERE id = ? AND userId = ?",
+      [tableId, userId],
+    );
 
     const tableCapacity =
       tableRows && tableRows.length > 0
         ? tableRows[0].capacity || globalMax
         : globalMax;
 
-    // 2. Obtener asientos ya ocupados en esa mesa
     const takenSeatRows = await dbAll(
-      "SELECT seatNumber FROM guests WHERE tableId = ? AND seatNumber IS NOT NULL",
-      [tableId],
+      "SELECT seatNumber FROM guests WHERE tableId = ? AND userId = ? AND seatNumber IS NOT NULL",
+      [tableId, userId],
     );
 
     const takenSeats = new Set(
@@ -102,7 +105,6 @@ const assignSeatsForTable = async (tableId, neededSeats = 1) => {
         .filter((n) => n !== null && n !== undefined),
     );
 
-    // 3. Calcular asientos libres (1..capacity)
     const freeSeats = [];
     for (let i = 1; i <= tableCapacity; i++) {
       if (!takenSeats.has(i)) {
@@ -111,11 +113,9 @@ const assignSeatsForTable = async (tableId, neededSeats = 1) => {
     }
 
     if (freeSeats.length < neededSeats) {
-      // No hay suficientes asientos libres para todo el grupo
       return [];
     }
 
-    // 4. Devolver los primeros N asientos libres (podríamos aleatorizar si se desea)
     return freeSeats.slice(0, neededSeats);
   } catch (error) {
     console.error("Error in assignSeatsForTable:", error);
@@ -123,18 +123,19 @@ const assignSeatsForTable = async (tableId, neededSeats = 1) => {
   }
 };
 
-// Validar que una mesa tiene capacidad disponible
-const validateTableCapacity = async (tableId, guestId) => {
+const validateTableCapacity = async (tableId, guestId, userId) => {
   try {
-    if (!tableId) return { valid: true }; // Sin mesa asignada es válido
+    if (!tableId) return { valid: true };
 
-    const globalMaxStr = await Setting.getSetting("max_guests_per_table");
+    const globalMaxStr = await Setting.getSetting(
+      "max_guests_per_table",
+      userId,
+    );
     const globalMax = parseInt(globalMaxStr || "10", 10);
 
-    // Obtener la definición de la mesa
     const tableDef = await dbAll(
-      "SELECT id, name, capacity FROM tables WHERE id = ?",
-      [tableId],
+      "SELECT id, name, capacity FROM tables WHERE id = ? AND userId = ?",
+      [tableId, userId],
     );
 
     if (!tableDef || tableDef.length === 0) {
@@ -144,10 +145,9 @@ const validateTableCapacity = async (tableId, guestId) => {
     const table = tableDef[0];
     const capacity = table.capacity || globalMax;
 
-    // Obtener ocupación actual (excluyendo el invitado actual)
     const occupancyResult = await dbAll(
-      "SELECT COUNT(*) as count FROM guests WHERE tableId = ? AND id != ?",
-      [tableId, guestId],
+      "SELECT COUNT(*) as count FROM guests WHERE tableId = ? AND userId = ? AND id != ?",
+      [tableId, userId, guestId],
     );
 
     const currentCount = occupancyResult[0]?.count || 0;
@@ -166,8 +166,13 @@ const validateTableCapacity = async (tableId, guestId) => {
   }
 };
 
+// ─── RUTAS PÚBLICAS (por slug) ────────────────────────────────────────────────
+
 export const getGuests = async (req, res) => {
   try {
+    // El middleware resolveUserContext ya montó req.userContext
+    const userId = req.userContext.userId;
+
     const { attending, needsTransport, search } = req.query;
     const filters = {};
 
@@ -181,7 +186,7 @@ export const getGuests = async (req, res) => {
       filters.search = search;
     }
 
-    const guests = await Guest.getAllGuests(filters);
+    const guests = await Guest.getAllGuests(filters, userId);
     res.json({
       success: true,
       data: guests,
@@ -199,8 +204,9 @@ export const getGuests = async (req, res) => {
 
 export const getGuest = async (req, res) => {
   try {
+    const userId = req.userContext.userId;
     const { id } = req.params;
-    const guest = await Guest.getGuestById(id);
+    const guest = await Guest.getGuestById(id, userId);
 
     if (!guest) {
       return res.status(404).json({
@@ -225,6 +231,7 @@ export const getGuest = async (req, res) => {
 
 export const createGuest = async (req, res) => {
   try {
+    const userId = req.userContext.userId;
     const {
       name,
       email,
@@ -240,7 +247,6 @@ export const createGuest = async (req, res) => {
       isAdult = true,
     } = req.body;
 
-    // Validación básica
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -248,7 +254,6 @@ export const createGuest = async (req, res) => {
       });
     }
 
-    // Validar longitud de campos
     const lengthValidation = validateFields(req.body, {
       name: FIELD_LIMITS.GUEST_NAME,
       email: FIELD_LIMITS.GUEST_EMAIL,
@@ -264,7 +269,6 @@ export const createGuest = async (req, res) => {
       });
     }
 
-    // Validar email si está presente
     if (email && !isValidEmail(email)) {
       return res.status(400).json({
         success: false,
@@ -272,13 +276,11 @@ export const createGuest = async (req, res) => {
       });
     }
 
-    // Sanitizar campos de texto (eliminar HTML de todos excepto notes que permite texto enriquecido)
-    const sanitizedBody = sanitizeObject(req.body, 
-      ['name', 'email', 'phone', 'allergies'], // Eliminar HTML completamente
-      ['notes'] // Permitir rich text seguro en notes
+    const sanitizedBody = sanitizeObject(
+      req.body,
+      ["name", "email", "phone", "allergies"],
+      ["notes"],
     );
-    
-    // Actualizar los valores con los sanitizados
     Object.assign(req.body, sanitizedBody);
 
     const finalChildren =
@@ -292,8 +294,10 @@ export const createGuest = async (req, res) => {
       attendance !== 0 &&
       attendance !== "0";
 
-    // FEATURE: Asignar mesa de grupo - respetar setting auto_assign_tables
-    const autoAssignStr = await Setting.getSetting("auto_assign_tables");
+    const autoAssignStr = await Setting.getSetting(
+      "auto_assign_tables",
+      userId,
+    );
     const autoAssign =
       autoAssignStr === "true" ||
       autoAssignStr === "1" ||
@@ -302,16 +306,15 @@ export const createGuest = async (req, res) => {
 
     let tableId =
       autoAssign && isAttending
-        ? await assignRandomTable(totalAttendees)
+        ? await assignRandomTable(totalAttendees, userId)
         : null;
     let seatNumbers = [];
 
-    // Si hay mesa asignada y el grupo asiste, intentamos asignar asientos
     if (tableId && isAttending && totalAttendees > 0) {
-      seatNumbers = await assignSeatsForTable(tableId, totalAttendees);
+      seatNumbers = await assignSeatsForTable(tableId, totalAttendees, userId);
     }
     if (!seatNumbers.length) {
-      tableId = null; // Si no se pudieron asignar asientos, no asignamos mesa para evitar inconsistencias
+      tableId = null;
     }
 
     const getSeatNumberForIndex = (index) => {
@@ -319,9 +322,9 @@ export const createGuest = async (req, res) => {
       return seatNumbers[index] !== undefined ? seatNumbers[index] : null;
     };
 
-    // 1. Crear invitado principal
     const mainGuest = await Guest.createGuest({
-      name: `${name} ${isAdult ? "" : "- Niño"}`,
+      userId,
+      name: isAdult ? name : `${name} - Niño`,
       email,
       phone,
       attending: isAttending,
@@ -336,9 +339,9 @@ export const createGuest = async (req, res) => {
     createdGuests.push(mainGuest);
 
     if (numAdults > 1) {
-      // 2. Crear adultos adicionales (si adults > 1)
       for (let i = 1; i < numAdults; i++) {
         const adultGuest = await Guest.createGuest({
+          userId,
           name: `${name} - Acompañante ${i}`,
           email: null,
           phone: null,
@@ -356,9 +359,9 @@ export const createGuest = async (req, res) => {
     }
 
     if (isAdult) {
-      // 3. Crear niños
       for (let i = 0; i < numChildren; i++) {
         const childGuest = await Guest.createGuest({
+          userId,
           name: `${name} - Niño ${i + 1}`,
           email: null,
           phone: null,
@@ -376,21 +379,15 @@ export const createGuest = async (req, res) => {
     }
 
     if (sendEmail !== false) {
-      // Enviar email al propietario (solo para el principal)
       await sendNewGuestEmail(mainGuest, numAdults, numChildren);
     }
 
-    // Notificación WhatsApp al propietario (CallMeBot). Se decide en base a
-    // la setting `enable_whatsapp`; el servicio filtra internamente si falta
-    // la api key o el phone. Fire-and-forget: cualquier error se loguea
-    // pero no afecta a la creación del invitado.
     if (sendEmail !== false) {
       sendNewGuestWhatsApp(mainGuest, numAdults, numChildren).catch((err) =>
         console.error("WhatsApp notification error:", err),
       );
     }
 
-    // Opcionalmente enviar confirmación al invitado
     if (process.env.SEND_CONFIRMATION_EMAIL === "true" && mainGuest.email) {
       await sendGuestConfirmationEmail(mainGuest);
     }
@@ -420,9 +417,12 @@ export const createGuest = async (req, res) => {
   }
 };
 
+// ─── RUTAS PROTEGIDAS ─────────────────────────────────────────────────────────
+
 export const updateGuest = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
     const {
       name,
       email,
@@ -436,7 +436,6 @@ export const updateGuest = async (req, res) => {
       seatNumber,
     } = req.body;
 
-    // Validación básica
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -444,7 +443,6 @@ export const updateGuest = async (req, res) => {
       });
     }
 
-    // Verificar que el invitado existe
     const existingGuest = await Guest.getGuestById(id);
     if (!existingGuest) {
       return res.status(404).json({
@@ -453,9 +451,16 @@ export const updateGuest = async (req, res) => {
       });
     }
 
-    // Validar capacidad de la mesa si se intenta asignar una
+    // Ownership validation
+    if (existingGuest.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     if (tableId !== undefined && tableId !== null) {
-      const capacityCheck = await validateTableCapacity(tableId, id);
+      const capacityCheck = await validateTableCapacity(tableId, id, userId);
       if (!capacityCheck.valid) {
         return res.status(400).json({
           success: false,
@@ -465,21 +470,26 @@ export const updateGuest = async (req, res) => {
       }
     }
 
-    const updatedGuest = await Guest.updateGuest(id, {
-      name,
-      email,
-      phone,
-      attending: attending !== undefined ? attending : existingGuest.attending,
-      mealType: mealType || "normal",
-      needsTransport:
-        needsTransport !== undefined
-          ? needsTransport
-          : existingGuest.needsTransport,
-      allergies,
-      notes,
-      tableId: tableId !== undefined ? tableId : null,
-      seatNumber: seatNumber !== undefined ? seatNumber : null,
-    });
+    const updatedGuest = await Guest.updateGuest(
+      id,
+      {
+        name,
+        email,
+        phone,
+        attending:
+          attending !== undefined ? attending : existingGuest.attending,
+        mealType: mealType || "normal",
+        needsTransport:
+          needsTransport !== undefined
+            ? needsTransport
+            : existingGuest.needsTransport,
+        allergies,
+        notes,
+        tableId: tableId !== undefined ? tableId : null,
+        seatNumber: seatNumber !== undefined ? seatNumber : null,
+      },
+      userId,
+    );
 
     res.json({
       success: true,
@@ -499,9 +509,9 @@ export const updateGuest = async (req, res) => {
 export const patchGuest = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
     const partialData = req.body;
 
-    // Verificar que el invitado existe
     const existingGuest = await Guest.getGuestById(id);
     if (!existingGuest) {
       return res.status(404).json({
@@ -510,11 +520,19 @@ export const patchGuest = async (req, res) => {
       });
     }
 
-    // Validar capacidad de la mesa si se intenta asignar una
+    // Ownership validation
+    if (existingGuest.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     if (partialData.tableId !== undefined && partialData.tableId !== null) {
       const capacityCheck = await validateTableCapacity(
         partialData.tableId,
         id,
+        userId,
       );
       if (!capacityCheck.valid) {
         return res.status(400).json({
@@ -525,20 +543,23 @@ export const patchGuest = async (req, res) => {
       }
     }
 
-    // Si cambia de mesa, quitar este invitado de captainIds de la mesa anterior
     let updatedOldTable = null;
     let updatedNewTable = null;
     if (partialData.tableId !== undefined) {
       const oldTableId = existingGuest.tableId;
       const newTableId = partialData.tableId;
-      if (oldTableId !== null && oldTableId !== undefined && String(oldTableId) !== String(newTableId)) {
+      if (
+        oldTableId !== null &&
+        oldTableId !== undefined &&
+        String(oldTableId) !== String(newTableId)
+      ) {
         await Guest.removeCaptainFromTable(oldTableId, id);
-        updatedOldTable = await Table.getTableById(oldTableId);
-        updatedNewTable = await Table.getTableById(newTableId);
+        updatedOldTable = await Table.getTableById(oldTableId, userId);
+        updatedNewTable = await Table.getTableById(newTableId, userId);
       }
     }
 
-    const updatedGuest = await Guest.patchGuest(id, partialData);
+    const updatedGuest = await Guest.patchGuest(id, partialData, userId);
 
     const response = {
       success: true,
@@ -546,11 +567,12 @@ export const patchGuest = async (req, res) => {
       message: "Guest partially updated successfully",
     };
 
-    // Devolver las mesas actualizadas para que el frontend pueda actualizar su estado
     if (updatedOldTable || updatedNewTable) {
       response.updatedTables = {};
-      if (updatedOldTable) response.updatedTables[updatedOldTable.id] = updatedOldTable;
-      if (updatedNewTable) response.updatedTables[updatedNewTable.id] = updatedNewTable;
+      if (updatedOldTable)
+        response.updatedTables[updatedOldTable.id] = updatedOldTable;
+      if (updatedNewTable)
+        response.updatedTables[updatedNewTable.id] = updatedNewTable;
     }
 
     res.json(response);
@@ -567,8 +589,8 @@ export const patchGuest = async (req, res) => {
 export const deleteGuest = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
 
-    // Verificar que el invitado existe
     const guest = await Guest.getGuestById(id);
     if (!guest) {
       return res.status(404).json({
@@ -577,7 +599,15 @@ export const deleteGuest = async (req, res) => {
       });
     }
 
-    const result = await Guest.deleteGuest(id);
+    // Ownership validation
+    if (guest.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
+    const result = await Guest.deleteGuest(id, userId);
 
     res.json({
       success: true,
@@ -594,20 +624,15 @@ export const deleteGuest = async (req, res) => {
   }
 };
 
-// solicita envío de código de confirmación para borrado de todos
 export const requestDeleteCode = async (req, res) => {
   try {
-    // generar y guardar código con expiración (15 minutos)
     pendingDeleteCode = generateDeleteCode();
     pendingDeleteExpiry = Date.now() + 15 * 60 * 1000;
 
-    // log para desarrollo
     console.log("🔐 Código de borrado generado:", pendingDeleteCode);
 
-    // enviar correo al dueño
     await sendDeleteCodeEmail(pendingDeleteCode);
 
-    // en desarrollo devolvemos el código tambien para facilitar pruebas
     const responsePayload = {
       success: true,
       message: "Confirmation code sent via email",
@@ -626,10 +651,11 @@ export const requestDeleteCode = async (req, res) => {
   }
 };
 
-// controlador para borrar todos los invitados
 export const deleteAllGuests = async (req, res) => {
   try {
     const { code } = req.query;
+    const userId = req.userContext.userId;
+
     if (!code) {
       return res.status(400).json({
         success: false,
@@ -651,11 +677,10 @@ export const deleteAllGuests = async (req, res) => {
       });
     }
 
-    // resetear código para evitar reutilización
     pendingDeleteCode = null;
     pendingDeleteExpiry = null;
 
-    const result = await Guest.deleteAllGuests();
+    const result = await Guest.deleteAllGuests(userId);
     res.json({
       success: true,
       data: result,
@@ -673,7 +698,8 @@ export const deleteAllGuests = async (req, res) => {
 
 export const getStats = async (req, res) => {
   try {
-    const stats = await Guest.getGuestStats();
+    const userId = req.userContext.userId;
+    const stats = await Guest.getGuestStats(userId);
 
     res.json({
       success: true,
@@ -698,7 +724,8 @@ export const getStats = async (req, res) => {
 
 export const getAttendanceStats = async (req, res) => {
   try {
-    const stats = await Guest.getAttendanceStats();
+    const userId = req.userContext.userId;
+    const stats = await Guest.getAttendanceStats(userId);
 
     res.json({
       success: true,
@@ -716,7 +743,8 @@ export const getAttendanceStats = async (req, res) => {
 
 export const getTransportationStats = async (req, res) => {
   try {
-    const stats = await Guest.getTransportationStats();
+    const userId = req.userContext.userId;
+    const stats = await Guest.getTransportationStats(userId);
 
     res.json({
       success: true,
@@ -734,7 +762,8 @@ export const getTransportationStats = async (req, res) => {
 
 export const getAllergiesStats = async (req, res) => {
   try {
-    const stats = await Guest.getAllergiesStats();
+    const userId = req.userContext.userId;
+    const stats = await Guest.getAllergiesStats(userId);
 
     res.json({
       success: true,
@@ -752,21 +781,14 @@ export const getAllergiesStats = async (req, res) => {
 
 export const resetDatabase = async (req, res) => {
   try {
-    // Importar la función de reseteo
-    const db = (await import("../db.js")).default;
-
-    // Refactorizado a async/await secuencial
-    await db.run("DELETE FROM preferences");
-    await db.run("DELETE FROM companions");
-    await db.run("DELETE FROM guests");
-    await db.run("DELETE FROM sqlite_sequence");
+    const userId = req.userContext.userId;
+    await db.run("DELETE FROM guests WHERE userId = ?", [userId]);
 
     res.json({
       success: true,
       message: "Database reset successfully",
       data: {
-        tables_cleared: ["guests", "companions", "preferences"],
-        ids_reset: true,
+        tables_cleared: ["guests"],
       },
     });
   } catch (error) {
