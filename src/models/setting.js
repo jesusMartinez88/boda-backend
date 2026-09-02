@@ -16,10 +16,12 @@ export const updateSetting = async (key, value, userId) => {
     [userId, key, value],
   );
 
-  return { key, value, changes: insertResult.changes };
+  return { key, value, changes: result.changes };
 };
 
 export const getAllSettings = async (userId) => {
-  const rows = await db.all("SELECT * FROM settings WHERE userId = ?", [userId]);
+  const rows = await db.all("SELECT * FROM settings WHERE userId = ?", [
+    userId,
+  ]);
   return rows || [];
 };
