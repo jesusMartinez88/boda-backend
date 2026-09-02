@@ -1,11 +1,11 @@
 {
   "name": "boda-backend",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "API REST para gestión de invitados a boda",
   "main": "src/index.js",
   "type": "module",
   "engines": {
-    "node": "24.18.0"
+    "node": "24.20.0"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -21,19 +21,19 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ai-sdk/openai": "^4.0.15",
+    "@ai-sdk/openai": "^4.0.52",
     "@libsql/client": "^0.17.4",
-    "ai": "^7.0.29",
+    "ai": "^7.0.85",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
+    "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
-    "isomorphic-dompurify": "^3.18.0",
+    "isomorphic-dompurify": "^3.19.0",
     "jsonwebtoken": "^9.0.3",
-    "libphonenumber-js": "^1.13.8",
-    "resend": "^6.17.2",
+    "libphonenumber-js": "^1.13.12",
+    "resend": "^6.25.0",
     "winston": "^3.19.0"
   },
   "devDependencies": {

@@ -15,7 +15,8 @@ export const updateSetting = async (key, value, userId) => {
      ON CONFLICT(userId, key) DO UPDATE SET value = excluded.value, updatedAt = CURRENT_TIMESTAMP`,
     [userId, key, value],
   );
-  return { key, value, changes: result.changes };
+
+  return { key, value, changes: insertResult.changes };
 };
 
 export const getAllSettings = async (userId) => {
