@@ -6,13 +6,21 @@ export const getSetting = async (key) => {
 };
 
 export const updateSetting = async (key, value) => {
-  const result = await db.run(
-    `INSERT INTO settings (key, value, updatedAt)
-     VALUES (?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = CURRENT_TIMESTAMP`,
+  const updateResult = await db.run(
+    "UPDATE settings SET value = ?, updatedAt = CURRENT_TIMESTAMP WHERE key = ?",
+    [value, key],
+  );
+
+  if (updateResult.changes > 0) {
+    return { key, value, changes: updateResult.changes };
+  }
+
+  const insertResult = await db.run(
+    "INSERT INTO settings (key, value, updatedAt) VALUES (?, ?, CURRENT_TIMESTAMP)",
     [key, value],
   );
-  return { key, value, changes: result.changes };
+
+  return { key, value, changes: insertResult.changes };
 };
 
 export const getAllSettings = async () => {
