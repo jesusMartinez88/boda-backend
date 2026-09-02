@@ -1,5 +1,6 @@
 import express from "express";
 import { authenticateJWT } from "../middleware/auth.js";
+import { resolveUserContext } from "../middleware/resolveUserContext.js";
 import {
   createSong,
   deleteSong,
@@ -11,6 +12,7 @@ import {
 const router = express.Router();
 
 router.use(authenticateJWT);
+router.use(resolveUserContext);
 
 router.get("/", getPlaylist);
 router.post("/", createSong);

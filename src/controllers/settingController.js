@@ -44,7 +44,8 @@ const serializeSettingValue = (key, value) => {
 
 export const getSettings = async (req, res) => {
   try {
-    const settings = await Setting.getAllSettings();
+    const userId = req.userContext.userId;
+    const settings = await Setting.getAllSettings(userId);
     const normalizedSettings = settings.map((setting) => ({
       key: setting.key,
       value: parseSettingValue(setting.key, setting.value),
@@ -68,6 +69,7 @@ export const updateSetting = async (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
+    const userId = req.userContext.userId;
 
     if (value === undefined) {
       return res.status(400).json({
@@ -76,8 +78,18 @@ export const updateSetting = async (req, res) => {
       });
     }
 
+    // Ownership validation - verificar que la setting existe para este usuario
+    const existing = await Setting.getAllSettings(userId);
+    const existingSetting = existing.find(s => s.key === key);
+    if (existingSetting && existingSetting.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     const serializedValue = serializeSettingValue(key, value);
-    await Setting.updateSetting(key, serializedValue);
+    await Setting.updateSetting(key, serializedValue, userId);
 
     res.json({
       success: true,

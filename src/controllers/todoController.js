@@ -2,7 +2,8 @@ import * as Todo from "../models/todo.js";
 
 export const getTodos = async (req, res) => {
   try {
-    const todos = await Todo.getAllTodos();
+    const userId = req.userContext.userId;
+    const todos = await Todo.getAllTodos(userId);
     res.json({
       success: true,
       data: todos,
@@ -21,7 +22,8 @@ export const getTodos = async (req, res) => {
 export const getTodo = async (req, res) => {
   try {
     const { id } = req.params;
-    const todo = await Todo.getTodoById(id);
+    const userId = req.userContext.userId;
+    const todo = await Todo.getTodoById(id, userId);
 
     if (!todo) {
       return res.status(404).json({
@@ -47,6 +49,7 @@ export const getTodo = async (req, res) => {
 export const createTodo = async (req, res) => {
   try {
     const { name, status, date } = req.body;
+    const userId = req.userContext.userId;
 
     if (!name) {
       return res.status(400).json({
@@ -55,7 +58,7 @@ export const createTodo = async (req, res) => {
       });
     }
 
-    const newTodo = await Todo.createTodo({ name, status, date });
+    const newTodo = await Todo.createTodo({ userId, name, status, date });
 
     res.status(201).json({
       success: true,
@@ -75,6 +78,7 @@ export const createTodo = async (req, res) => {
 export const updateTodo = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
     const { name, status, date } = req.body;
 
     if (!name) {
@@ -84,7 +88,7 @@ export const updateTodo = async (req, res) => {
       });
     }
 
-    const existingTodo = await Todo.getTodoById(id);
+    const existingTodo = await Todo.getTodoById(id, userId);
     if (!existingTodo) {
       return res.status(404).json({
         success: false,
@@ -92,11 +96,19 @@ export const updateTodo = async (req, res) => {
       });
     }
 
+    // Ownership validation
+    if (existingTodo.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
     const updatedTodo = await Todo.updateTodo(id, {
       name,
       status: status || existingTodo.status,
       date: date || existingTodo.date,
-    });
+    }, userId);
 
     res.json({
       success: true,
@@ -116,9 +128,10 @@ export const updateTodo = async (req, res) => {
 export const patchTodo = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
     const partialData = req.body;
 
-    const existingTodo = await Todo.getTodoById(id);
+    const existingTodo = await Todo.getTodoById(id, userId);
     if (!existingTodo) {
       return res.status(404).json({
         success: false,
@@ -126,7 +139,15 @@ export const patchTodo = async (req, res) => {
       });
     }
 
-    const updatedTodo = await Todo.patchTodo(id, partialData);
+    // Ownership validation
+    if (existingTodo.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
+    const updatedTodo = await Todo.patchTodo(id, partialData, userId);
 
     res.json({
       success: true,
@@ -146,8 +167,9 @@ export const patchTodo = async (req, res) => {
 export const deleteTodo = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.userContext.userId;
 
-    const todo = await Todo.getTodoById(id);
+    const todo = await Todo.getTodoById(id, userId);
     if (!todo) {
       return res.status(404).json({
         success: false,
@@ -155,7 +177,15 @@ export const deleteTodo = async (req, res) => {
       });
     }
 
-    const result = await Todo.deleteTodo(id);
+    // Ownership validation
+    if (todo.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+      });
+    }
+
+    const result = await Todo.deleteTodo(id, userId);
 
     res.json({
       success: true,

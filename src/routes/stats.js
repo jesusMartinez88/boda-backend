@@ -2,11 +2,13 @@ import express from "express";
 import * as guestController from "../controllers/guestController.js";
 import { devOnly } from "../middleware/devOnly.js";
 import { authenticateJWT } from "../middleware/auth.js";
+import { resolveUserContext } from "../middleware/resolveUserContext.js";
 
 const router = express.Router();
 
 // Apply authentication to all stats routes
 router.use(authenticateJWT);
+router.use(resolveUserContext);
 
 // Estadísticas generales
 router.get("/", guestController.getStats);

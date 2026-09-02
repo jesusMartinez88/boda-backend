@@ -82,6 +82,38 @@ const db = {
   },
 };
 
+const recreateLegacyUniqueTable = async ({
+  tableName,
+  legacyConstraint,
+  createTableSql,
+  columns,
+}) => {
+  const tableSqlRow = await db.get(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+    [tableName],
+  );
+  const tableSql = tableSqlRow?.sql || "";
+  if (!legacyConstraint.test(tableSql)) return false;
+
+  const existingColumns = await db.all(`PRAGMA table_info(${tableName})`);
+  const existingColumnNames = new Set(
+    existingColumns.map((column) => column.name),
+  );
+  const columnsToCopy = columns.filter((column) =>
+    existingColumnNames.has(column),
+  );
+
+  await db.run(`DROP TABLE IF EXISTS ${tableName}_new`);
+  await db.run(createTableSql.replaceAll("__TABLE__", `${tableName}_new`));
+  await db.run(`
+    INSERT INTO ${tableName}_new (${columnsToCopy.join(", ")})
+    SELECT ${columnsToCopy.join(", ")} FROM ${tableName}
+  `);
+  await db.run(`DROP TABLE ${tableName}`);
+  await db.run(`ALTER TABLE ${tableName}_new RENAME TO ${tableName}`);
+  return true;
+};
+
 const initializeTables = async () => {
   try {
     console.log(
@@ -92,6 +124,7 @@ const initializeTables = async () => {
     await db.run(`
       CREATE TABLE IF NOT EXISTS guests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
         name TEXT NOT NULL,
         email TEXT,
         phone TEXT,
@@ -104,55 +137,46 @@ const initializeTables = async () => {
         isAdult INTEGER DEFAULT 1,
         seatNumber INTEGER,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // Tabla de configuración
+    // Tabla de configuración (por usuario)
     await db.run(`
       CREATE TABLE IF NOT EXISTS settings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        key TEXT UNIQUE NOT NULL,
+        userId INTEGER,
+        key TEXT NOT NULL,
         value TEXT,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(userId, key),
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // Inicializar configuraciones por defecto
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('total_estimated_guests', '0')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('max_guests_per_table', '10')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_assign_tables', '0')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_highchairs', '0')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_whatsapp', '0')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('whatsapp_apikey', '')",
-    );
-    await db.run(
-      "INSERT OR IGNORE INTO settings (key, value) VALUES ('whatsapp_phone', '')",
-    );
+    await db.run(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_user_key
+      ON settings(userId, key)
+    `);
+
+    // Las configuraciones por defecto se inicializan por usuario en initUserDefaults()
 
     // Tabla de mesas
     await db.run(`
       CREATE TABLE IF NOT EXISTS tables (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
+        userId INTEGER,
+        name TEXT NOT NULL,
         capacity INTEGER,
         shape TEXT DEFAULT 'round',
         posX REAL DEFAULT 0,
         posY REAL DEFAULT 0,
         highchairs INTEGER DEFAULT 0,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(userId, name),
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -189,10 +213,40 @@ const initializeTables = async () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        role TEXT DEFAULT 'admin',
+        role TEXT DEFAULT 'user',
+        slug TEXT UNIQUE NOT NULL DEFAULT '',
+        email TEXT,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Migración: agregar slug a usuarios existentes si no existe
+    try {
+      const usersInfo = await db.all("PRAGMA table_info(users)");
+      const hasSlug = usersInfo.some((col) => col.name === "slug");
+      const hasEmail = usersInfo.some((col) => col.name === "email");
+      if (!hasSlug) {
+        await db.run(`ALTER TABLE users ADD COLUMN slug TEXT`);
+        // Asignar slug basado en username para usuarios existentes
+        const existingUsers = await db.all("SELECT id, username FROM users");
+        for (const u of existingUsers) {
+          const slug = u.username
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
+          await db.run("UPDATE users SET slug = ? WHERE id = ?", [slug, u.id]);
+        }
+        console.log("✅ Column slug added to existing users table");
+      }
+      if (!hasEmail) {
+        await db.run(`ALTER TABLE users ADD COLUMN email TEXT`);
+        console.log("✅ Column email added to existing users table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (users slug/email):", err.message);
+      }
+    }
 
     // Usuario admin por defecto
     const adminUsername = process.env.ADMIN_USERNAME || "admin";
@@ -203,11 +257,17 @@ const initializeTables = async () => {
       ]);
       if (!user) {
         const hashedPassword = bcrypt.hashSync(adminPassword, 10);
+        const adminSlug = adminUsername
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
         await db.run(
-          "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-          [adminUsername, hashedPassword, "admin"],
+          "INSERT INTO users (username, password, role, slug) VALUES (?, ?, ?, ?)",
+          [adminUsername, hashedPassword, "admin", adminSlug],
         );
-        console.log(`Default user '${adminUsername}' created`);
+        console.log(
+          `Default user '${adminUsername}' created with slug '${adminSlug}'`,
+        );
       }
     }
 
@@ -215,6 +275,7 @@ const initializeTables = async () => {
     await db.run(`
       CREATE TABLE IF NOT EXISTS finances (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
         description TEXT NOT NULL,
         amount REAL NOT NULL,
         type TEXT CHECK(type IN ('income', 'expense')) NOT NULL,
@@ -222,7 +283,8 @@ const initializeTables = async () => {
         paidBy TEXT,
         date DATETIME DEFAULT CURRENT_TIMESTAMP,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -230,11 +292,13 @@ const initializeTables = async () => {
     await db.run(`
       CREATE TABLE IF NOT EXISTS todos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
         name TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
         date DATETIME,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -242,6 +306,7 @@ const initializeTables = async () => {
     await db.run(`
       CREATE TABLE IF NOT EXISTS music_playlist (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
         title TEXT NOT NULL,
         artist TEXT NOT NULL,
         youtube_url TEXT NOT NULL,
@@ -249,7 +314,8 @@ const initializeTables = async () => {
         note TEXT,
         order_index INTEGER NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -262,26 +328,23 @@ const initializeTables = async () => {
     await db.run(`
       CREATE TABLE IF NOT EXISTS contact_categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL UNIQUE,
-        slug TEXT NOT NULL UNIQUE,
-        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        userId INTEGER,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(userId, name),
+        UNIQUE(userId, slug),
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // Insertar categorías por defecto si no existen
-    try {
-      await db.run(
-        "INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novio', 'novio')",
-      );
-      await db.run(
-        "INSERT OR IGNORE INTO contact_categories (name, slug) VALUES ('Novia', 'novia')",
-      );
-    } catch (e) {}
+    // Las categorías por defecto se inicializan por usuario en initUserDefaults()
 
-    // Tabla de contactos para invitaciones (sin restricción de side)
+    // Tabla de contactos para invitaciones
     await db.run(`
       CREATE TABLE IF NOT EXISTS contacts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER,
         name TEXT NOT NULL,
         phone TEXT NOT NULL,
         side TEXT NOT NULL,
@@ -291,7 +354,8 @@ const initializeTables = async () => {
         invitation_status TEXT DEFAULT 'not_sent',
         responded_at DATETIME,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
@@ -404,9 +468,248 @@ const initializeTables = async () => {
       }
     }
 
+    // Migraciones de userId en tablas de datos existentes
+    const dataTables = [
+      "guests",
+      "tables",
+      "finances",
+      "todos",
+      "music_playlist",
+      "contacts",
+      "contact_categories",
+    ];
+    for (const tableName of dataTables) {
+      try {
+        const cols = await db.all(`PRAGMA table_info(${tableName})`);
+        const hasUserId = cols.some((c) => c.name === "userId");
+        if (!hasUserId) {
+          await db.run(`ALTER TABLE ${tableName} ADD COLUMN userId INTEGER`);
+          console.log(`✅ Column userId added to ${tableName}`);
+          // Asignar al primer admin los registros sin userId
+          const adminUser = await db.get(
+            "SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1",
+          );
+          if (adminUser) {
+            await db.run(
+              `UPDATE ${tableName} SET userId = ? WHERE userId IS NULL`,
+              [adminUser.id],
+            );
+            console.log(
+              `✅ Existing rows in ${tableName} assigned to admin (id=${adminUser.id})`,
+            );
+          }
+        }
+      } catch (err) {
+        if (!err.message?.includes("duplicate column")) {
+          console.error(
+            `Migration warning (userId in ${tableName}):`,
+            err.message,
+          );
+        }
+      }
+    }
+
+    try {
+      const tablesRecreated = await recreateLegacyUniqueTable({
+        tableName: "tables",
+        legacyConstraint:
+          /(?:name\s+TEXT[^,]*\s+UNIQUE\b|UNIQUE\s*\(\s*[`"]?name[`"]?\s*\))/i,
+        createTableSql: `
+          CREATE TABLE __TABLE__ (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER,
+            name TEXT NOT NULL,
+            capacity INTEGER,
+            shape TEXT DEFAULT 'round',
+            posX REAL DEFAULT 0,
+            posY REAL DEFAULT 0,
+            captainIds TEXT,
+            rotation INTEGER DEFAULT 0,
+            highchairs INTEGER DEFAULT 0,
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(userId, name),
+            FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+          )
+        `,
+        columns: [
+          "id",
+          "userId",
+          "name",
+          "capacity",
+          "shape",
+          "posX",
+          "posY",
+          "captainIds",
+          "rotation",
+          "highchairs",
+          "createdAt",
+          "updatedAt",
+        ],
+      });
+      if (tablesRecreated)
+        console.log("✅ tables: legacy schema migrated to multi-user");
+
+      const categoriesRecreated = await recreateLegacyUniqueTable({
+        tableName: "contact_categories",
+        legacyConstraint:
+          /(?:name\s+TEXT[^,]*\s+UNIQUE\b|slug\s+TEXT[^,]*\s+UNIQUE\b)/i,
+        createTableSql: `
+          CREATE TABLE __TABLE__ (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER,
+            name TEXT NOT NULL,
+            slug TEXT NOT NULL,
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(userId, name),
+            UNIQUE(userId, slug),
+            FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+          )
+        `,
+        columns: ["id", "userId", "name", "slug", "createdAt"],
+      });
+      if (categoriesRecreated) {
+        console.log(
+          "✅ contact_categories: legacy schema migrated to multi-user",
+        );
+      }
+    } catch (err) {
+      console.error(
+        "Migration warning (legacy multi-user UNIQUE constraints):",
+        err.message,
+      );
+    }
+
+    // Migración: settings — cambiar de UNIQUE(key) a UNIQUE(userId, key)
+    // SQLite no permite DROP CONSTRAINT, así que solo agregamos userId si no existe
+    try {
+      const settingsCols = await db.all("PRAGMA table_info(settings)");
+      const hasUserIdInSettings = settingsCols.some((c) => c.name === "userId");
+      if (!hasUserIdInSettings) {
+        await db.run(`ALTER TABLE settings ADD COLUMN userId INTEGER`);
+        const adminUser = await db.get(
+          "SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1",
+        );
+        if (adminUser) {
+          await db.run("UPDATE settings SET userId = ? WHERE userId IS NULL", [
+            adminUser.id,
+          ]);
+          console.log(
+            `✅ Existing settings assigned to admin (id=${adminUser.id})`,
+          );
+        }
+        console.log("✅ Column userId added to settings");
+      }
+      await db.run(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_user_key ON settings(userId, key)`,
+      );
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (userId in settings):", err.message);
+      }
+    }
+
+    // Migración: quitar UNIQUE(key) legacy de settings (versión single-user).
+    // El bloque anterior añade userId y un UNIQUE INDEX (userId, key), pero NO
+    // elimina la constraint de tabla UNIQUE(key) que quedó del schema original.
+    // Esa constraint legacy hace que cualquier INSERT de un usuario nuevo con una
+    // key que ya existe para el admin falle con SQLITE_CONSTRAINT_PRIMARYKEY,
+    // porque el ON CONFLICT(userId, key) del modelo no captura conflictos sobre
+    // `key` a secas. La única forma de quitarla en SQLite es recrear la tabla.
+    try {
+      const settingsSqlRow = await db.get(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='settings'",
+      );
+      const tableSql = settingsSqlRow?.sql || "";
+      const settingsCols = await db.all("PRAGMA table_info(settings)");
+
+      // Detectar cualquier esquema legacy:
+      //   1. `key TEXT PRIMARY KEY` (esquema muy antiguo, sin id, key es PK)
+      //   2. `, UNIQUE(key)` o `, UNIQUE(`key`)` (versión single-user con UNIQUE)
+      //   3. Falta la columna `id` que el modelo actual espera
+      const hasLegacyPrimaryKey = /key\s+TEXT\s+PRIMARY\s+KEY/i.test(tableSql);
+      const hasLegacyUniqueKey = /,\s*UNIQUE\s*\(\s*[`"]?key[`"]?\s*\)/i.test(
+        tableSql,
+      );
+      const hasIdColumn = settingsCols.some((c) => c.name === "id");
+      const isLegacySchema =
+        hasLegacyPrimaryKey || hasLegacyUniqueKey || !hasIdColumn;
+
+      if (isLegacySchema) {
+        console.log(
+          "⚠️  Legacy settings schema detected — recreating table...",
+        );
+        if (hasLegacyPrimaryKey)
+          console.log("    reason: key TEXT PRIMARY KEY");
+        if (hasLegacyUniqueKey)
+          console.log("    reason: UNIQUE(key) table constraint");
+        if (!hasIdColumn) console.log("    reason: missing `id` column");
+
+        const hasCreatedAt = settingsCols.some((c) => c.name === "createdAt");
+
+        await db.run(`
+          CREATE TABLE settings_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER,
+            key TEXT NOT NULL,
+            value TEXT,
+            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(userId, key),
+            FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+          )
+        `);
+        // Copiamos solo las columnas que existen en ambos esquemas.
+        // El nuevo esquema no tiene `createdAt`; el legacy sí.
+        await db.run(`
+          INSERT INTO settings_new (userId, key, value, updatedAt)
+          SELECT userId, key, value, updatedAt FROM settings
+        `);
+        await db.run(`DROP TABLE settings`);
+        await db.run(`ALTER TABLE settings_new RENAME TO settings`);
+        await db.run(
+          `CREATE UNIQUE INDEX IF NOT EXISTS idx_settings_user_key
+           ON settings(userId, key)`,
+        );
+        console.log("✅ settings: legacy schema migrated to multi-user");
+        if (hasCreatedAt) {
+          console.log(
+            "   (columna legacy `createdAt` descartada intencionalmente)",
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        "Migration warning (drop legacy UNIQUE on settings.key):",
+        err.message,
+      );
+    }
+
     console.log(
       `${isProduction ? "Turso" : "Local SQLite"} database initialized successfully`,
     );
+
+    // Backfill: garantizar que todos los usuarios tengan settings por defecto.
+    // Con el esquema legacy de settings (key TEXT PRIMARY KEY) la función
+    // initUserDefaults() fallaba silenciosamente para usuarios nuevos porque
+    // INSERT OR IGNORE no podía crear filas con keys que ya existían para el
+    // admin. Esto deja al usuario sin defaults y rompe PUT /api/settings/:key.
+    // initUserDefaults es idempotente (INSERT OR IGNORE), así que es seguro
+    // ejecutarlo para todos los usuarios; solo insertará los que falten.
+    try {
+      const allUsers = await db.all("SELECT id FROM users");
+      for (const u of allUsers) {
+        const hasAny = await db.get(
+          "SELECT 1 AS x FROM settings WHERE userId = ? LIMIT 1",
+          [u.id],
+        );
+        if (!hasAny) {
+          await initUserDefaults(u.id);
+          console.log(`✅ Backfilled default settings for user id=${u.id}`);
+        }
+      }
+    } catch (err) {
+      console.error("Backfill warning (default settings):", err.message);
+    }
   } catch (err) {
     console.error(
       `Error initializing ${isProduction ? "Turso" : "local SQLite"} tables:`,
@@ -415,7 +718,40 @@ const initializeTables = async () => {
   }
 };
 
+/**
+ * Inicializa los settings y categorías por defecto para un usuario recién creado.
+ * Se llama desde el authController al crear un usuario nuevo.
+ */
+export const initUserDefaults = async (userId) => {
+  const defaults = [
+    ["total_estimated_guests", "0"],
+    ["max_guests_per_table", "10"],
+    ["auto_assign_tables", "0"],
+    ["enable_highchairs", "0"],
+    ["enable_whatsapp", "0"],
+    ["whatsapp_apikey", ""],
+    ["whatsapp_phone", ""],
+  ];
+  for (const [key, value] of defaults) {
+    await db.run(
+      `INSERT OR IGNORE INTO settings (userId, key, value) VALUES (?, ?, ?)`,
+      [userId, key, value],
+    );
+  }
+  // Categorías de contacto por defecto
+  const defaultCategories = [
+    ["Novio", "novio"],
+    ["Novia", "novia"],
+  ];
+  for (const [name, slug] of defaultCategories) {
+    await db.run(
+      `INSERT OR IGNORE INTO contact_categories (userId, name, slug) VALUES (?, ?, ?)`,
+      [userId, name, slug],
+    );
+  }
+};
+
 // Ejecutar inicialización
-initializeTables();
+export const initializationPromise = initializeTables();
 
 export default db;

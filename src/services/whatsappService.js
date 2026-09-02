@@ -97,7 +97,7 @@ export const sendNewGuestWhatsApp = async (guest, numAdults, numChildren) => {
   }
 
   try {
-    const enabled = await Setting.getSetting("enable_whatsapp");
+    const enabled = await Setting.getSetting("enable_whatsapp", guest.userId);
     const isEnabled =
       enabled === "true" ||
       enabled === "1" ||
@@ -109,8 +109,8 @@ export const sendNewGuestWhatsApp = async (guest, numAdults, numChildren) => {
       return null;
     }
 
-    const phone = await Setting.getSetting("whatsapp_phone");
-    const apikey = await Setting.getSetting("whatsapp_apikey");
+    const phone = await Setting.getSetting("whatsapp_phone", guest.userId);
+    const apikey = await Setting.getSetting("whatsapp_apikey", guest.userId);
 
     if (!phone || !apikey) {
       console.warn(

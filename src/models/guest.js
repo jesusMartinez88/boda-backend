@@ -1,8 +1,8 @@
 import db from "../db.js";
 
-export const getAllGuests = async (filters = {}) => {
-  let query = "SELECT * FROM guests WHERE 1=1";
-  const params = [];
+export const getAllGuests = async (filters = {}, userId) => {
+  let query = "SELECT * FROM guests WHERE userId = ?";
+  const params = [userId];
 
   if (filters.attending !== undefined) {
     query += " AND attending = ?";
@@ -26,12 +26,16 @@ export const getAllGuests = async (filters = {}) => {
   return rows || [];
 };
 
-export const getGuestById = async (id) => {
+export const getGuestById = async (id, userId) => {
+  if (userId !== undefined) {
+    return await db.get("SELECT * FROM guests WHERE id = ? AND userId = ?", [id, userId]);
+  }
   return await db.get("SELECT * FROM guests WHERE id = ?", [id]);
 };
 
 export const createGuest = async (guestData) => {
   const {
+    userId,
     name,
     email,
     phone,
@@ -46,9 +50,10 @@ export const createGuest = async (guestData) => {
   } = guestData;
 
   const result = await db.run(
-    `INSERT INTO guests (name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult, seatNumber)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO guests (userId, name, email, phone, attending, mealType, needsTransport, allergies, notes, tableId, isAdult, seatNumber)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      userId || null,
       name,
       email || null,
       phone || null,
@@ -66,7 +71,7 @@ export const createGuest = async (guestData) => {
   return { id: result.lastID, ...guestData };
 };
 
-export const updateGuest = async (id, guestData) => {
+export const updateGuest = async (id, guestData, userId) => {
   const {
     name,
     email,
@@ -81,9 +86,12 @@ export const updateGuest = async (id, guestData) => {
     seatNumber,
   } = guestData;
 
+  const whereClause = userId !== undefined ? "WHERE id = ? AND userId = ?" : "WHERE id = ?";
+  const whereParams = userId !== undefined ? [id, userId] : [id];
+
   await db.run(
     `UPDATE guests SET name = ?, email = ?, phone = ?, attending = ?, mealType = ?, needsTransport = ?, allergies = ?, notes = ?, tableId = ?, isAdult = ?, seatNumber = ?, updatedAt = CURRENT_TIMESTAMP
-     WHERE id = ?`,
+     ${whereClause}`,
     [
       name,
       email || null,
@@ -96,14 +104,14 @@ export const updateGuest = async (id, guestData) => {
       tableId !== undefined ? tableId : null,
       isAdult !== undefined ? (isAdult ? 1 : 0) : 1,
       seatNumber !== undefined && seatNumber !== null ? seatNumber : null,
-      id,
+      ...whereParams,
     ],
   );
 
   return { id, ...guestData };
 };
 
-export const patchGuest = async (id, partialData) => {
+export const patchGuest = async (id, partialData, userId) => {
   const allowedFields = [
     "name",
     "email",
@@ -121,7 +129,7 @@ export const patchGuest = async (id, partialData) => {
   const fields = Object.keys(partialData).filter((field) =>
     allowedFields.includes(field),
   );
-  if (fields.length === 0) return await getGuestById(id);
+  if (fields.length === 0) return await getGuestById(id, userId);
 
   const setClause = fields.map((field) => `${field} = ?`).join(", ");
   const params = fields.map((field) => {
@@ -135,28 +143,41 @@ export const patchGuest = async (id, partialData) => {
     }
     return value;
   });
-  params.push(id);
 
-  await db.run(
-    `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-    params,
-  );
+  if (userId !== undefined) {
+    params.push(id, userId);
+    await db.run(
+      `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND userId = ?`,
+      params,
+    );
+  } else {
+    params.push(id);
+    await db.run(
+      `UPDATE guests SET ${setClause}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      params,
+    );
+  }
 
-  return await getGuestById(id);
+  return await getGuestById(id, userId);
 };
 
-export const deleteGuest = async (id) => {
-  const result = await db.run("DELETE FROM guests WHERE id = ?", [id]);
+export const deleteGuest = async (id, userId) => {
+  const whereClause = userId !== undefined ? "WHERE id = ? AND userId = ?" : "WHERE id = ?";
+  const params = userId !== undefined ? [id, userId] : [id];
+  const result = await db.run(`DELETE FROM guests ${whereClause}`, params);
   return { deletedId: id, changes: result.changes };
 };
 
-export const deleteAllGuests = async () => {
-  await db.run("DELETE FROM guests");
-  await db.run("DELETE FROM sqlite_sequence WHERE name = 'guests'");
-  return { deletedAll: true, resetSeq: true };
+export const deleteAllGuests = async (userId) => {
+  if (userId !== undefined) {
+    await db.run("DELETE FROM guests WHERE userId = ?", [userId]);
+  } else {
+    await db.run("DELETE FROM guests");
+  }
+  return { deletedAll: true };
 };
 
-export const getGuestStats = async () => {
+export const getGuestStats = async (userId) => {
   return await db.get(
     `SELECT 
       COUNT(*) as totalGuests,
@@ -165,15 +186,17 @@ export const getGuestStats = async () => {
       SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
       SUM(CASE WHEN isAdult = 1 THEN 1 ELSE 0 END) as totalAdults,
       SUM(CASE WHEN isAdult = 0 THEN 1 ELSE 0 END) as totalChildren
-     FROM guests`,
+     FROM guests WHERE userId = ?`,
+    [userId],
   );
 };
 
-export const getAttendanceStats = async () => {
+export const getAttendanceStats = async (userId) => {
   const rows = await db.all(
-    `SELECT attending, COUNT(*) as count FROM guests GROUP BY attending`,
+    `SELECT attending, COUNT(*) as count FROM guests WHERE userId = ? GROUP BY attending`,
+    [userId],
   );
-  
+
   const stats = {
     confirmed: 0,
     pending: 0,
@@ -185,39 +208,51 @@ export const getAttendanceStats = async () => {
   return stats;
 };
 
-export const getTransportationStats = async () => {
+export const getTransportationStats = async (userId) => {
   return await db.get(
     `SELECT 
       SUM(CASE WHEN needsTransport = 1 THEN 1 ELSE 0 END) as needTransport,
       SUM(CASE WHEN needsTransport = 0 THEN 1 ELSE 0 END) as noTransport
-     FROM guests`,
+     FROM guests WHERE userId = ?`,
+    [userId],
   );
 };
 
-export const getAllergiesStats = async () => {
+export const getAllergiesStats = async (userId) => {
   return await db.all(
-    `SELECT allergies, COUNT(*) as count FROM guests WHERE allergies IS NOT NULL AND allergies != '' GROUP BY allergies`,
+    `SELECT allergies, COUNT(*) as count FROM guests WHERE userId = ? AND allergies IS NOT NULL AND allergies != '' GROUP BY allergies`,
+    [userId],
   );
 };
 
-export const getUniqueTableIds = async () => {
+export const getUniqueTableIds = async (userId) => {
   const rows = await db.all(
-    "SELECT DISTINCT tableId FROM guests WHERE tableId IS NOT NULL",
+    "SELECT DISTINCT tableId FROM guests WHERE userId = ? AND tableId IS NOT NULL",
+    [userId],
   );
   return rows.map((r) => r.tableId);
 };
 
-export const unassignGuestsFromTable = async (tableId) => {
+export const unassignGuestsFromTable = async (tableId, userId) => {
+  const whereClause = userId !== undefined
+    ? "WHERE tableId = ? AND userId = ?"
+    : "WHERE tableId = ?";
+  const params = userId !== undefined ? [tableId, userId] : [tableId];
   const result = await db.run(
-    "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId = ?",
-    [tableId],
+    `UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP ${whereClause}`,
+    params,
   );
   return { tableId, changes: result.changes };
 };
 
-export const unassignAllGuestsFromTables = async () => {
+export const unassignAllGuestsFromTables = async (userId) => {
+  const whereClause = userId !== undefined
+    ? "WHERE tableId IS NOT NULL AND userId = ?"
+    : "WHERE tableId IS NOT NULL";
+  const params = userId !== undefined ? [userId] : [];
   const result = await db.run(
-    "UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP WHERE tableId IS NOT NULL",
+    `UPDATE guests SET tableId = NULL, seatNumber = NULL, updatedAt = CURRENT_TIMESTAMP ${whereClause}`,
+    params,
   );
   return { changes: result.changes };
 };
@@ -238,7 +273,7 @@ export const removeCaptainFromTable = async (tableId, guestId) => {
 
   if (!Array.isArray(captainIds)) return;
 
-    const idx = captainIds.indexOf(Number(guestId));
+  const idx = captainIds.indexOf(Number(guestId));
   if (idx === -1) return;
 
   captainIds.splice(idx, 1);

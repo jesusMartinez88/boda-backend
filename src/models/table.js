@@ -1,15 +1,10 @@
 import db from "../db.js";
 
-export const getNextTableName = async () => {
+export const getNextTableName = async (userId) => {
   // Buscar el valor numérico más alto en nombres que sigan el patrón "Mesa X"
   const rows = await db.all(
-    `
-    SELECT name FROM (
-      SELECT name FROM tables
-      UNION
-      SELECT tableId as name FROM guests
-    ) WHERE name LIKE 'Mesa %'
-  `,
+    `SELECT name FROM tables WHERE userId = ? AND name LIKE 'Mesa %'`,
+    [userId],
   );
 
   let maxNum = 0;
@@ -24,9 +19,8 @@ export const getNextTableName = async () => {
   return `Mesa ${maxNum + 1}`;
 };
 
-export const getAllTables = async () => {
-  const rows = await db.all("SELECT * FROM tables ORDER BY name ASC");
-  // Parse captainIds from JSON string to array
+export const getAllTables = async (userId) => {
+  const rows = await db.all("SELECT * FROM tables WHERE userId = ? ORDER BY name ASC", [userId]);
   if (rows && rows.length > 0) {
     rows.forEach((row) => {
       if (row.captainIds && typeof row.captainIds === "string") {
@@ -41,12 +35,15 @@ export const getAllTables = async () => {
   return rows || [];
 };
 
-export const getTableByName = async (name) => {
-  return await db.get("SELECT * FROM tables WHERE name = ?", [name]);
+export const getTableByName = async (name, userId) => {
+  return await db.get("SELECT * FROM tables WHERE name = ? AND userId = ?", [name, userId]);
 };
 
-export const getTableById = async (id) => {
-  const row = await db.get("SELECT * FROM tables WHERE id = ?", [id]);
+export const getTableById = async (id, userId) => {
+  const row = userId !== undefined
+    ? await db.get("SELECT * FROM tables WHERE id = ? AND userId = ?", [id, userId])
+    : await db.get("SELECT * FROM tables WHERE id = ?", [id]);
+
   if (row && row.captainIds && typeof row.captainIds === "string") {
     try {
       row.captainIds = JSON.parse(row.captainIds);
@@ -59,6 +56,7 @@ export const getTableById = async (id) => {
 
 export const createTable = async (tableData) => {
   const {
+    userId,
     name,
     capacity,
     shape,
@@ -73,8 +71,9 @@ export const createTable = async (tableData) => {
     captainIdsJson = JSON.stringify(captainIds);
   }
   const result = await db.run(
-    "INSERT INTO tables (name, capacity, shape, posX, posY, captainIds, rotation, highchairs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO tables (userId, name, capacity, shape, posX, posY, captainIds, rotation, highchairs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
+      userId || null,
       name,
       capacity,
       shape || "round",
@@ -88,14 +87,19 @@ export const createTable = async (tableData) => {
   return { id: result.lastID, ...tableData };
 };
 
-// Quita un captainId de TODAS las mesas excepto la mesa excludedId
+// Quita un captainId de TODAS las mesas excepto la mesa excludedId (del mismo usuario)
 export const removeCaptainFromAllOtherTables = async (
   captainId,
   excludedTableId,
+  userId,
 ) => {
+  const whereClause = userId !== undefined
+    ? "WHERE id != ? AND userId = ?"
+    : "WHERE id != ?";
+  const params = userId !== undefined ? [excludedTableId, userId] : [excludedTableId];
   const tables = await db.all(
-    "SELECT id, captainIds FROM tables WHERE id != ?",
-    [excludedTableId],
+    `SELECT id, captainIds FROM tables ${whereClause}`,
+    params,
   );
 
   for (const table of tables) {
@@ -124,7 +128,7 @@ export const removeCaptainFromAllOtherTables = async (
   }
 };
 
-export const updateTableById = async (id, tableData) => {
+export const updateTableById = async (id, tableData, userId) => {
   const {
     name,
     capacity,
@@ -168,7 +172,6 @@ export const updateTableById = async (id, tableData) => {
   }
 
   if ("captainIds" in tableData) {
-    // Obtener los captains actuales de esta mesa ANTES de actualizar
     const oldTable = await db.get(
       "SELECT captainIds FROM tables WHERE id = ?",
       [id],
@@ -185,13 +188,11 @@ export const updateTableById = async (id, tableData) => {
       captainIdsJson =
         captainIds.length > 0 ? JSON.stringify(captainIds) : null;
 
-      // 1) Quitar captains ANTERIORES de esta mesa de cualquier otra tabla
       for (const cid of oldCaptainIds) {
-        await removeCaptainFromAllOtherTables(cid, id);
+        await removeCaptainFromAllOtherTables(cid, id, userId);
       }
-      // 2) Quitar captains NUEVOS de cualquier otra tabla (evitar duplicados)
       for (const cid of captainIds) {
-        await removeCaptainFromAllOtherTables(cid, id);
+        await removeCaptainFromAllOtherTables(cid, id, userId);
       }
     }
 
@@ -203,28 +204,42 @@ export const updateTableById = async (id, tableData) => {
     return { id, changes: 0, skipped: true };
   }
 
-  params.push(id);
+  if (userId !== undefined) {
+    params.push(id, userId);
+    const result = await db.run(
+      `UPDATE tables SET ${fields.join(", ")}, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND userId = ?`,
+      params,
+    );
+    return { id, changes: result.changes };
+  } else {
+    params.push(id);
+    const result = await db.run(
+      `UPDATE tables SET ${fields.join(", ")}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      params,
+    );
+    return { id, changes: result.changes };
+  }
+};
 
-  const result = await db.run(
-    `UPDATE tables SET ${fields.join(", ")}, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-    params,
-  );
+export const deleteTableById = async (id, userId) => {
+  const whereClause = userId !== undefined ? "WHERE id = ? AND userId = ?" : "WHERE id = ?";
+  const params = userId !== undefined ? [id, userId] : [id];
+  const result = await db.run(`DELETE FROM tables ${whereClause}`, params);
   return { id, changes: result.changes };
 };
 
-export const deleteTableById = async (id) => {
-  const result = await db.run("DELETE FROM tables WHERE id = ?", [id]);
-  return { id, changes: result.changes };
-};
-
-export const deleteTableByName = async (name) => {
-  const result = await db.run("DELETE FROM tables WHERE name = ?", [name]);
+export const deleteTableByName = async (name, userId) => {
+  const whereClause = userId !== undefined ? "WHERE name = ? AND userId = ?" : "WHERE name = ?";
+  const params = userId !== undefined ? [name, userId] : [name];
+  const result = await db.run(`DELETE FROM tables ${whereClause}`, params);
   return { name, changes: result.changes };
 };
 
-// elimina todas las mesas de la tabla y reinicia el contador autoincrement
-export const deleteAllTables = async () => {
-  await db.run("DELETE FROM tables");
-  await db.run("DELETE FROM sqlite_sequence WHERE name = 'tables'");
-  return { deletedAll: true, resetSeq: true };
+export const deleteAllTables = async (userId) => {
+  if (userId !== undefined) {
+    await db.run("DELETE FROM tables WHERE userId = ?", [userId]);
+  } else {
+    await db.run("DELETE FROM tables");
+  }
+  return { deletedAll: true };
 };

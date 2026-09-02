@@ -12,6 +12,7 @@ import aiRoutes from "./routes/ai.js";
 import contactRoutes from "./routes/contacts.js";
 import categoryRoutes from "./routes/categories.js";
 import musicPlaylistRoutes from "./routes/music-playlist.routes.js";
+import userRoutes from "./routes/users.js";
 import { initializeEmailService } from "./services/emailService.js";
 import { initializeWhatsAppService } from "./services/whatsappService.js";
 import helmet from "helmet";
@@ -123,6 +124,7 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/contacts", contactRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/music-playlist", musicPlaylistRoutes);
+app.use("/api/users", userRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
