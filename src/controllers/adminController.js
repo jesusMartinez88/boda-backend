@@ -1,0 +1,189 @@
+import db from "../db.js";
+import * as User from "../models/user.js";
+import { logError } from "../utils/logger.js";
+
+const PROTECTED_ADMIN_USERNAME = "admin";
+
+/**
+ * Devuelve la lista de todos los usuarios con info agregada útil para
+ * el panel de admin: contadores de tablas relacionadas + flags derivados.
+ *
+ * hasInvitation se considera true si:
+ *   - El admin marcó manualmente `invitationCompletedAt`, o
+ *   - El usuario tiene contenido propio (guests/contacts/tables/finances).
+ */
+export const listUsersWithStats = async (req, res) => {
+  try {
+    const rows = await db.all(`
+      SELECT
+        u.id, u.username, u.email, u.role, u.slug, u.plan, u.paidAt,
+        u.invitationCompletedAt, u.lastLoginAt, u.createdAt,
+        (SELECT COUNT(*) FROM guests g WHERE g.userId = u.id) AS guestCount,
+        (SELECT COUNT(*) FROM contacts c WHERE c.userId = u.id) AS contactCount,
+        (SELECT COUNT(*) FROM tables t WHERE t.userId = u.id) AS tableCount,
+        (SELECT COUNT(*) FROM finances f WHERE f.userId = u.id) AS financeCount,
+        (SELECT COUNT(*) FROM todos td WHERE td.userId = u.id) AS todoCount
+      FROM users u
+      ORDER BY u.createdAt ASC
+    `);
+
+    const data = rows.map((row) => {
+      const guestCount = Number(row.guestCount) || 0;
+      const contactCount = Number(row.contactCount) || 0;
+      const tableCount = Number(row.tableCount) || 0;
+      const financeCount = Number(row.financeCount) || 0;
+      const todoCount = Number(row.todoCount) || 0;
+      const manuallyCompleted = !!row.invitationCompletedAt;
+      const hasContent =
+        guestCount > 0 || contactCount > 0 || tableCount > 0 || financeCount > 0;
+
+      return {
+        ...row,
+        guestCount,
+        contactCount,
+        tableCount,
+        financeCount,
+        todoCount,
+        paid: !!row.paidAt,
+        hasInvitation: manuallyCompleted || hasContent,
+        isProtected: row.username === PROTECTED_ADMIN_USERNAME,
+      };
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    logError("Error listing admin users", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Edita campos permitidos de un usuario. NO permite:
+ *   - Editar el admin principal (username = "admin")
+ *   - Editarse a sí mismo (cualquiera de los campos protegidos)
+ *   - Cambiar username/role (eso tiene su propio endpoint)
+ *   - Cambiar password (usar /api/auth/me/password)
+ *
+ * Campos permitidos: email, plan, paidAt, invitationCompletedAt.
+ * Para "desmarcar" un campo basta con enviar `null` o string vacío.
+ */
+const ALLOWED_PATCH_FIELDS = new Set([
+  "email",
+  "plan",
+  "paidAt",
+  "invitationCompletedAt",
+]);
+
+const isValidPlan = (plan) => plan === "free" || plan === "premium";
+
+const normalizeDateOrNull = (value) => {
+  if (value === null || value === "" || value === undefined) {
+    return null;
+  }
+  // Aceptamos ISO strings o timestamps; si es inválido, devolvemos null.
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+export const updateUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const target = await User.findById(id);
+    if (!target) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (target.username === PROTECTED_ADMIN_USERNAME) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot edit the main admin account",
+      });
+    }
+    if (Number(req.user.id) === Number(id)) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot edit your own account from this endpoint",
+      });
+    }
+
+    const patch = {};
+    for (const [key, value] of Object.entries(req.body || {})) {
+      if (!ALLOWED_PATCH_FIELDS.has(key)) continue;
+      patch[key] = value;
+    }
+
+    if ("plan" in patch && patch.plan !== null && patch.plan !== "") {
+      if (!isValidPlan(patch.plan)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid plan value" });
+      }
+    }
+
+    if ("email" in patch) {
+      const email = patch.email;
+      if (email !== null && email !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid email format" });
+      }
+    }
+
+    if ("paidAt" in patch) patch.paidAt = normalizeDateOrNull(patch.paidAt);
+    if ("invitationCompletedAt" in patch)
+      patch.invitationCompletedAt = normalizeDateOrNull(patch.invitationCompletedAt);
+
+    const updated = await User.updateUser(id, patch);
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        paid: !!updated.paidAt,
+        hasInvitation: !!updated.invitationCompletedAt,
+      },
+      message: "User updated successfully",
+    });
+  } catch (error) {
+    logError("Error updating admin user", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Elimina un usuario. Mismas reglas que el userController.deleteUser
+ * original, pero expuesto bajo /api/admin/users/:id.
+ */
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const target = await User.findById(id);
+    if (!target) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    if (target.username === PROTECTED_ADMIN_USERNAME) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot delete the main admin account",
+      });
+    }
+    if (Number(req.user.id) === Number(id)) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Cannot delete yourself" });
+    }
+    await User.deleteUser(id);
+    res.json({ success: true, message: "User deleted successfully" });
+  } catch (error) {
+    logError("Error deleting admin user", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Internal server error" });
+  }
+};

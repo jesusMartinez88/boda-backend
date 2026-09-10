@@ -248,6 +248,32 @@ const initializeTables = async () => {
       }
     }
 
+    // Migración: columnas admin-only (paidAt, plan, invitationCompletedAt, lastLoginAt)
+    try {
+      const usersInfo = await db.all("PRAGMA table_info(users)");
+      const colsByName = new Set(usersInfo.map((c) => c.name));
+      if (!colsByName.has("paidAt")) {
+        await db.run(`ALTER TABLE users ADD COLUMN paidAt DATETIME`);
+        console.log("✅ Column paidAt added to users table");
+      }
+      if (!colsByName.has("plan")) {
+        await db.run(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'`);
+        console.log("✅ Column plan added to users table");
+      }
+      if (!colsByName.has("invitationCompletedAt")) {
+        await db.run(`ALTER TABLE users ADD COLUMN invitationCompletedAt DATETIME`);
+        console.log("✅ Column invitationCompletedAt added to users table");
+      }
+      if (!colsByName.has("lastLoginAt")) {
+        await db.run(`ALTER TABLE users ADD COLUMN lastLoginAt DATETIME`);
+        console.log("✅ Column lastLoginAt added to users table");
+      }
+    } catch (err) {
+      if (!err.message?.includes("duplicate column")) {
+        console.error("Migration warning (users admin fields):", err.message);
+      }
+    }
+
     // Usuario admin por defecto
     const adminUsername = process.env.ADMIN_USERNAME || "admin";
     const adminPassword = process.env.ADMIN_PASSWORD;

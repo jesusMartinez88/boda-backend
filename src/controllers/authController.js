@@ -22,6 +22,13 @@ export const login = async (req, res) => {
       });
     }
 
+    // Best-effort: registrar el último login. Si falla, no bloqueamos el login.
+    try {
+      await User.updateLastLogin(user.id);
+    } catch (err) {
+      console.warn("Could not update lastLoginAt:", err.message);
+    }
+
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role, slug: user.slug },
       process.env.JWT_SECRET,
@@ -117,6 +124,64 @@ export const register = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error during registration",
+    });
+  }
+};
+
+/**
+ * Comprueba si un nombre de usuario está disponible para registro.
+ * Reglas:
+ *   - Mínimo 3 caracteres, máximo 32.
+ *   - Solo letras, números, guion, guion bajo y punto.
+ *   - No puede ser "admin" (reservado).
+ * Devuelve `{ available: boolean, reason?: string }`.
+ * No expone información sensible: solo indica disponibilidad.
+ */
+const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,32}$/;
+const RESERVED_USERNAMES = new Set(["admin"]);
+
+export const checkUsername = async (req, res) => {
+  const raw = typeof req.query.username === "string" ? req.query.username.trim() : "";
+
+  if (!raw) {
+    return res.status(400).json({
+      success: false,
+      available: false,
+      reason: "missing",
+      message: "Username is required",
+    });
+  }
+
+  if (!USERNAME_RE.test(raw)) {
+    return res.status(200).json({
+      success: true,
+      available: false,
+      reason: "invalid_format",
+    });
+  }
+
+  if (RESERVED_USERNAMES.has(raw.toLowerCase())) {
+    return res.status(200).json({
+      success: true,
+      available: false,
+      reason: "reserved",
+    });
+  }
+
+  try {
+    const existing = await User.findByUsername(raw);
+    return res.status(200).json({
+      success: true,
+      available: !existing,
+      reason: existing ? "taken" : "free",
+    });
+  } catch (error) {
+    console.error("checkUsername error:", error);
+    return res.status(500).json({
+      success: false,
+      available: false,
+      reason: "server_error",
+      message: "Internal server error",
     });
   }
 };
