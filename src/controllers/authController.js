@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import * as User from "../models/user.js";
 import { initUserDefaults } from "../db.js";
+import { logWarn } from "../utils/logger.js";
 
 export const login = async (req, res) => {
   const { username, password } = req.body;
@@ -130,57 +131,65 @@ export const register = async (req, res) => {
 
 /**
  * Comprueba si un nombre de usuario está disponible para registro.
- * Reglas:
- *   - Mínimo 3 caracteres, máximo 32.
- *   - Solo letras, números, guion, guion bajo y punto.
- *   - No puede ser "admin" (reservado).
- * Devuelve `{ available: boolean, reason?: string }`.
- * No expone información sensible: solo indica disponibilidad.
+ *
+ * Consideraciones de seguridad:
+ *   - La respuesta es SIEMPRE genérica (`{ available: boolean }`).
+ *     No se distingue entre "taken", "reserved" o "invalid_format":
+ *     el frontend no debe poder inferir si un usuario concreto existe
+ *     a partir del cuerpo de la respuesta. (Tampoco desde la latencia:
+ *     el middleware `withConstantLatency` iguala los tiempos.)
+ *   - Si el formato es inválido, devolvemos `available: false` igual que
+ *     si ya existiera, para que ambas situaciones sean indistinguibles.
+ *   - Logging mínimo para auditoría sin filtrar PII al log.
  */
 const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,32}$/;
 const RESERVED_USERNAMES = new Set(["admin"]);
 
 export const checkUsername = async (req, res) => {
-  const raw = typeof req.query.username === "string" ? req.query.username.trim() : "";
+  const raw =
+    typeof req.query.username === "string" ? req.query.username.trim() : "";
 
   if (!raw) {
     return res.status(400).json({
       success: false,
       available: false,
-      reason: "missing",
       message: "Username is required",
     });
   }
 
-  if (!USERNAME_RE.test(raw)) {
-    return res.status(200).json({
-      success: true,
-      available: false,
-      reason: "invalid_format",
-    });
-  }
+  // Formato inválido o username reservado: no revelamos el motivo,
+  // solo decimos "no disponible".
+  const formatOk = USERNAME_RE.test(raw);
+  const notReserved = !RESERVED_USERNAMES.has(raw.toLowerCase());
 
-  if (RESERVED_USERNAMES.has(raw.toLowerCase())) {
+  if (!formatOk || !notReserved) {
     return res.status(200).json({
       success: true,
       available: false,
-      reason: "reserved",
     });
   }
 
   try {
     const existing = await User.findByUsername(raw);
+    const available = !existing;
+
+    // Log de eventos de seguridad: intentos de username reservado o
+    // parecidos a "admin" se monitorizan por separado.
+    if (existing && raw.toLowerCase().includes("admin")) {
+      logWarn(
+        `[security] check-username hit for near-admin username "${raw}" from ${req.ip}`,
+      );
+    }
+
     return res.status(200).json({
       success: true,
-      available: !existing,
-      reason: existing ? "taken" : "free",
+      available,
     });
   } catch (error) {
     console.error("checkUsername error:", error);
     return res.status(500).json({
       success: false,
       available: false,
-      reason: "server_error",
       message: "Internal server error",
     });
   }

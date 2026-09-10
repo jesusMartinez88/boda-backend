@@ -86,16 +86,8 @@ const generalLimiter = rateLimit({
   },
 });
 
-const authLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many login attempts, please try again in an hour.",
-  },
-});
+// (Los limiters de /api/auth se aplican dentro de src/routes/auth.js:
+//  authLimiter a login/register, checkUsernameLimiter a check-username.)
 
 const corsOptions = {
   origin: process.env.ORIGIN_URL || "http://localhost:4200",
@@ -113,7 +105,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "OK", message: "Wedding API is running" });
 });
 
-app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/table", tableRoutes);
