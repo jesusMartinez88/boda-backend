@@ -5,8 +5,11 @@ import { logError } from "../utils/logger.js";
 const PROTECTED_ADMIN_USERNAME = "admin";
 
 /**
- * Devuelve la lista de todos los usuarios con info agregada útil para
- * el panel de admin: contadores de tablas relacionadas + flags derivados.
+ * Devuelve la lista de usuarios con info agregada útil para el panel de admin:
+ * contadores de tablas relacionadas + flags derivados.
+ *
+ * Se excluye al admin (role='admin'): el panel es para gestionar usuarios
+ * "cliente", no al propio operador.
  *
  * hasInvitation se considera true si:
  *   - El admin marcó manualmente `invitationCompletedAt`, o
@@ -24,6 +27,7 @@ export const listUsersWithStats = async (req, res) => {
         (SELECT COUNT(*) FROM finances f WHERE f.userId = u.id) AS financeCount,
         (SELECT COUNT(*) FROM todos td WHERE td.userId = u.id) AS todoCount
       FROM users u
+      WHERE u.role != 'admin'
       ORDER BY u.createdAt ASC
     `);
 
