@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 
 // Columnas "seguras" que devolvemos al frontend (nunca password, etc.)
 const PUBLIC_USER_COLUMNS =
-  "id, username, email, role, slug, plan, paidAt, invitationCompletedAt, lastLoginAt, createdAt";
+  "id, username, email, role, slug, plan, paidAt, invitationCompletedAt, lastLoginAt, createdAt, notes";
 
 export const findByUsername = async (username) => {
   return await db.get("SELECT * FROM users WHERE username = ?", [username]);
@@ -68,6 +68,7 @@ const ALLOWED_FIELDS = new Set([
   "paidAt",
   "invitationCompletedAt",
   "role",
+  "notes",
 ]);
 
 export const updateUser = async (id, fields) => {

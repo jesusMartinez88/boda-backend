@@ -248,7 +248,7 @@ const initializeTables = async () => {
       }
     }
 
-    // Migración: columnas admin-only (paidAt, plan, invitationCompletedAt, lastLoginAt)
+    // Migración: columnas admin-only (paidAt, plan, invitationCompletedAt, lastLoginAt, notes)
     try {
       const usersInfo = await db.all("PRAGMA table_info(users)");
       const colsByName = new Set(usersInfo.map((c) => c.name));
@@ -267,6 +267,10 @@ const initializeTables = async () => {
       if (!colsByName.has("lastLoginAt")) {
         await db.run(`ALTER TABLE users ADD COLUMN lastLoginAt DATETIME`);
         console.log("✅ Column lastLoginAt added to users table");
+      }
+      if (!colsByName.has("notes")) {
+        await db.run(`ALTER TABLE users ADD COLUMN notes TEXT`);
+        console.log("✅ Column notes added to users table");
       }
     } catch (err) {
       if (!err.message?.includes("duplicate column")) {

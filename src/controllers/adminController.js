@@ -17,7 +17,7 @@ export const listUsersWithStats = async (req, res) => {
     const rows = await db.all(`
       SELECT
         u.id, u.username, u.email, u.role, u.slug, u.plan, u.paidAt,
-        u.invitationCompletedAt, u.lastLoginAt, u.createdAt,
+        u.invitationCompletedAt, u.lastLoginAt, u.createdAt, u.notes,
         (SELECT COUNT(*) FROM guests g WHERE g.userId = u.id) AS guestCount,
         (SELECT COUNT(*) FROM contacts c WHERE c.userId = u.id) AS contactCount,
         (SELECT COUNT(*) FROM tables t WHERE t.userId = u.id) AS tableCount,
@@ -66,7 +66,7 @@ export const listUsersWithStats = async (req, res) => {
  *   - Cambiar username/role (eso tiene su propio endpoint)
  *   - Cambiar password (usar /api/auth/me/password)
  *
- * Campos permitidos: email, plan, paidAt, invitationCompletedAt.
+ * Campos permitidos: email, plan, paidAt, invitationCompletedAt, notes.
  * Para "desmarcar" un campo basta con enviar `null` o string vacío.
  */
 const ALLOWED_PATCH_FIELDS = new Set([
@@ -74,6 +74,7 @@ const ALLOWED_PATCH_FIELDS = new Set([
   "plan",
   "paidAt",
   "invitationCompletedAt",
+  "notes",
 ]);
 
 const isValidPlan = (plan) => plan === "free" || plan === "premium";
