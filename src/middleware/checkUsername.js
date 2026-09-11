@@ -1,4 +1,4 @@
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import { logWarn } from "../utils/logger.js";
 
 /**
@@ -6,6 +6,11 @@ import { logWarn } from "../utils/logger.js";
  * Pensado para que un usuario legítimo (un check por submit del form) tenga
  * margen amplio, pero un atacante enumerando usernames se quede corto rápido.
  * 60 requests / 15 min por IP, 20 / 15 min por username.
+ *
+ * Nota: usamos `ipKeyGenerator` (helper oficial de express-rate-limit) en vez
+ * de `req.ip` directo para pasar la validación de IPv6 y hashear la IP de
+ * forma estable — un atacante que rote prefijos IPv6 sigue contando como una
+ * misma "IP lógica" porque se trunca a /64.
  */
 export const checkUsernameLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -15,7 +20,7 @@ export const checkUsernameLimiter = rateLimit({
   keyGenerator: (req) => {
     const username =
       typeof req.query.username === "string" ? req.query.username.trim() : "";
-    return username ? `u:${username.toLowerCase()}` : `ip:${req.ip}`;
+    return username ? `u:${username.toLowerCase()}` : `ip:${ipKeyGenerator(req)}`;
   },
   handler: (req, res) => {
     logWarn(

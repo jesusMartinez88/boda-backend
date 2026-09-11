@@ -17,7 +17,7 @@ import adminRoutes from "./routes/admin.js";
 import { initializeEmailService } from "./services/emailService.js";
 import { initializeWhatsAppService } from "./services/whatsappService.js";
 import helmet from "helmet";
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import compression from "compression";
 import { logError } from "./utils/logger.js";
@@ -80,6 +80,10 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: "draft-8",
   legacyHeaders: false,
+  // `ipKeyGenerator` hashea la IP respetando el prefijo IPv6 /64 y pasa la
+  // validación interna de express-rate-limit v7+ (que rechaza `req.ip` crudo
+  // por ser bypassable con X-Forwarded-For bajo IPv6).
+  keyGenerator: ipKeyGenerator,
   message: {
     success: false,
     message: "Too many requests, please try again later.",
