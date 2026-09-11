@@ -17,8 +17,8 @@ const authLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  // `ipKeyGenerator` para pasar la validación IPv6 de express-rate-limit v7+.
-  keyGenerator: ipKeyGenerator,
+  // `ipKeyGenerator` espera un string (la IP), no el Request.
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: {
     success: false,
     message: "Too many login attempts, please try again in an hour.",

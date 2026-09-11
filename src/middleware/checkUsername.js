@@ -20,7 +20,10 @@ export const checkUsernameLimiter = rateLimit({
   keyGenerator: (req) => {
     const username =
       typeof req.query.username === "string" ? req.query.username.trim() : "";
-    return username ? `u:${username.toLowerCase()}` : `ip:${ipKeyGenerator(req)}`;
+    // OJO: `ipKeyGenerator` espera un string (la IP), no el objeto Request.
+    // Si le pasas `req` directamente, lo devuelve tal cual y revienta al
+    // hashearlo en `setDraft8Headers` con `ERR_INVALID_ARG_TYPE`.
+    return username ? `u:${username.toLowerCase()}` : `ip:${ipKeyGenerator(req.ip)}`;
   },
   handler: (req, res) => {
     logWarn(

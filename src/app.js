@@ -80,10 +80,10 @@ const generalLimiter = rateLimit({
   },
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  // `ipKeyGenerator` hashea la IP respetando el prefijo IPv6 /64 y pasa la
-  // validación interna de express-rate-limit v7+ (que rechaza `req.ip` crudo
-  // por ser bypassable con X-Forwarded-For bajo IPv6).
-  keyGenerator: ipKeyGenerator,
+  // `ipKeyGenerator` espera un string (la IP), no el Request. Hay que extraerla.
+  // Si se le pasa `req` directamente, lo devuelve tal cual y el hash de
+  // `setDraft8Headers` revienta con ERR_INVALID_ARG_TYPE.
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
   message: {
     success: false,
     message: "Too many requests, please try again later.",
