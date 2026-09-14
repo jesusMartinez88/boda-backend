@@ -42,6 +42,11 @@ export const listUsers = async () => {
 };
 
 export const deleteUser = async (id) => {
+  // Defensa: en Turso el PRAGMA foreign_keys puede resetearse por
+  // request. Lo reactivamos justo antes del DELETE para garantizar
+  // que el CASCADE barra guests, settings, tables, finances, contacts,
+  // todos, music_playlist y landing_questionnaire asociados.
+  await db.run("PRAGMA foreign_keys = ON");
   const result = await db.run("DELETE FROM users WHERE id = ?", [id]);
   return { deletedId: id, changes: result.changes };
 };

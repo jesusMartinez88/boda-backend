@@ -14,6 +14,7 @@ import categoryRoutes from "./routes/categories.js";
 import musicPlaylistRoutes from "./routes/music-playlist.routes.js";
 import userRoutes from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
+import landingQuestionnaireRoutes from "./routes/landingQuestionnaire.js";
 import { initializeEmailService } from "./services/emailService.js";
 import { initializeWhatsAppService } from "./services/whatsappService.js";
 import helmet from "helmet";
@@ -122,6 +123,7 @@ app.use("/api/contacts", contactRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/music-playlist", musicPlaylistRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/landing-questionnaire", landingQuestionnaireRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use((req, res) => {

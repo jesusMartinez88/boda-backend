@@ -1,5 +1,6 @@
 import express from "express";
 import * as adminController from "../controllers/adminController.js";
+import * as questionnaireController from "../controllers/landingQuestionnaireController.js";
 import { authenticateJWT } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 
@@ -11,5 +12,12 @@ router.use(requireRole("admin"));
 router.get("/users", adminController.listUsersWithStats);
 router.patch("/users/:id", adminController.updateUser);
 router.delete("/users/:id", adminController.deleteUser);
+
+// Cuestionario inicial de la landing de un usuario concreto. Lo expone el
+// admin para diseñar la landing en base a las respuestas del cliente.
+router.get(
+  "/users/:id/landing-questionnaire",
+  questionnaireController.getForUser,
+);
 
 export default router;

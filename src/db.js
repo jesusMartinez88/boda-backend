@@ -120,6 +120,63 @@ const initializeTables = async () => {
       `Initializing ${isProduction ? "Turso" : "local SQLite"} database tables...`,
     );
 
+    /**
+     * Activar `ON DELETE CASCADE` para todas las FKs.
+     *
+     * SQLite/libSQL NO aplica las foreign keys por defecto: aunque el
+     * schema declare `FOREIGN KEY (userId) REFERENCES users(id) ON
+     * DELETE CASCADE`, hasta que se hace `PRAGMA foreign_keys = ON`
+     * esas constraints son no-op. Sin esto, borrar un usuario dejaba
+     * filas huérfanas en guests, settings, tables, finances, contacts,
+     * todos, music_playlist, landing_questionnaire, etc.
+     *
+     * En Turso (modo remoto) el PRAGMA se aplica per-request: cada
+     * `client.execute` abre una conexión nueva, así que el flag puede
+     * resetearse. Como defensa adicional, lo re-aplicamos justo antes
+     * de los DELETE en `User.deleteUser` y `adminController.deleteUser`.
+     */
+    await db.run("PRAGMA foreign_keys = ON");
+
+    /**
+     * Limpieza one-shot: borrar filas huérfanas que se acumularon
+     * mientras el cascade estaba desactivado. Es seguro ejecutarlo
+     * siempre: si no hay huérfanas, los DELETE no afectan nada.
+     */
+    const orphanTables = [
+      "guests",
+      "tables",
+      "finances",
+      "todos",
+      "music_playlist",
+      "contacts",
+      "contact_categories",
+      "settings",
+      "landing_questionnaire",
+    ];
+    let totalOrphansRemoved = 0;
+    for (const tableName of orphanTables) {
+      try {
+        const result = await db.run(
+          `DELETE FROM ${tableName}
+           WHERE userId IS NOT NULL
+             AND userId NOT IN (SELECT id FROM users)`,
+        );
+        if (result.changes > 0) {
+          console.log(
+            `🧹 ${result.changes} huérfanas eliminadas de ${tableName}`,
+          );
+          totalOrphansRemoved += result.changes;
+        }
+      } catch (err) {
+        console.error(`Orphan cleanup warning (${tableName}):`, err.message);
+      }
+    }
+    if (totalOrphansRemoved > 0) {
+      console.log(
+        `✅ Limpieza de huérfanos completada: ${totalOrphansRemoved} filas eliminadas en total`,
+      );
+    }
+
     // Tabla de invitados
     await db.run(`
       CREATE TABLE IF NOT EXISTS guests (
@@ -712,6 +769,60 @@ const initializeTables = async () => {
         "Migration warning (drop legacy UNIQUE on settings.key):",
         err.message,
       );
+    }
+
+    // Tabla del cuestionario inicial que rellena el cliente justo después
+    // de registrarse. Sirve para que el admin sepa cómo quiere el cliente su
+    // landing antes de ponerse a diseñarla (cuenta atrás, fecha, invitados,
+    // color, transporte/hotel, etc.).
+    //
+    // Diseño: una fila por usuario (UNIQUE(userId)). Los campos booleanos se
+    // guardan como INTEGER 0/1 (mismo patrón que `auto_assign_tables` en
+    // `settings`); las opciones "abiertas" van en JSON dentro de
+    // `additionalServices` para no romper el esquema si en el futuro el
+    // admin añade más preguntas.
+    try {
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS landing_questionnaire (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          userId INTEGER UNIQUE NOT NULL,
+          weddingDate TEXT,
+          estimatedGuests INTEGER,
+          predominantColor TEXT,
+          hasCountdown INTEGER DEFAULT 0,
+          hasBusService INTEGER DEFAULT 0,
+          hasHotelService INTEGER DEFAULT 0,
+          additionalServices TEXT,
+          notes TEXT,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `);
+
+      // Migración: si la tabla ya existía de una versión previa sin alguna
+      // columna, las añadimos sin perder datos. Mismo patrón tolerante que
+      // en el resto del esquema.
+      const lqInfo = await db.all("PRAGMA table_info(landing_questionnaire)");
+      const lqCols = new Set(lqInfo.map((c) => c.name));
+      const lqMigrations = [
+        ["weddingDate", "TEXT"],
+        ["estimatedGuests", "INTEGER"],
+        ["predominantColor", "TEXT"],
+        ["hasCountdown", "INTEGER DEFAULT 0"],
+        ["hasBusService", "INTEGER DEFAULT 0"],
+        ["hasHotelService", "INTEGER DEFAULT 0"],
+        ["additionalServices", "TEXT"],
+        ["notes", "TEXT"],
+      ];
+      for (const [name, type] of lqMigrations) {
+        if (!lqCols.has(name)) {
+          await db.run(`ALTER TABLE landing_questionnaire ADD COLUMN ${name} ${type}`);
+          console.log(`✅ Column ${name} added to landing_questionnaire`);
+        }
+      }
+    } catch (err) {
+      console.error("Migration warning (landing_questionnaire):", err.message);
     }
 
     console.log(
