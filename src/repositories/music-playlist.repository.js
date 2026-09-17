@@ -41,8 +41,22 @@ export const createSong = async (song) => {
   return getSongById(result.lastID, song.userId);
 };
 
+const ALLOWED_UPDATE_FIELDS = new Set([
+  "title",
+  "artist",
+  "youtube_url",
+  "youtube_id",
+  "note",
+  "order_index",
+]);
+
 export const updateSongPartial = async (id, partialData, userId) => {
-  const entries = Object.entries(partialData).filter(([, value]) => value !== undefined && value !== null);
+  const entries = Object.entries(partialData).filter(
+    ([field, value]) =>
+      ALLOWED_UPDATE_FIELDS.has(field) &&
+      value !== undefined &&
+      value !== null,
+  );
   if (entries.length === 0) {
     return getSongById(id, userId);
   }
