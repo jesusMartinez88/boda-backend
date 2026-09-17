@@ -196,6 +196,193 @@ export const sendGuestConfirmationEmail = async (guest) => {
 };
 
 /**
+ * Envía al propietario un mensaje recibido desde el formulario público de
+ * contacto de la invitación. Si el visitante facilitó un email, se usa como
+ * `replyTo` para que los novios puedan responder directamente.
+ *
+ * @param {object} payload
+ * @param {string} payload.name       Nombre del visitante (required)
+ * @param {string} [payload.email]    Email del visitante (optional)
+ * @param {string} [payload.category] Categoría ("consulta" | "sugerencia" | "rsvp" | "otro")
+ * @param {string} [payload.subject]  Asunto libre que escribió el visitante
+ * @param {string} payload.message    Mensaje (required)
+ * @returns {Promise<object|null>} Resultado de Resend o `null` si falla / está deshabilitado.
+ */
+export const sendContactMessageEmail = async ({
+  name,
+  email,
+  category,
+  subject,
+  message,
+}) => {
+  if (!emailEnabled) {
+    console.warn(
+      "⚠️ Intento de envío de contacto sin emailService habilitado.",
+    );
+    return null;
+  }
+
+  try {
+    const emailOwner = process.env.EMAILOWNER;
+    if (!emailOwner) {
+      console.warn("EMAILOWNER not configured");
+      return null;
+    }
+
+    const safeName = String(name ?? "").slice(0, 100);
+    const safeEmail = email ? String(email).slice(0, 255) : null;
+    const safeCategory = category ? String(category).slice(0, 40) : "general";
+    const safeSubject = subject ? String(subject).slice(0, 200) : "";
+    const safeMessage = String(message ?? "").slice(0, 2000);
+
+    const subjectLine = safeSubject
+      ? `📩 [Web ${safeCategory}] ${safeSubject} — de ${safeName}`
+      : `📩 [Web ${safeCategory}] Mensaje de ${safeName}`;
+
+    const replyToHeader = safeEmail ? [safeEmail] : undefined;
+
+    const categoryLabels = {
+      consulta: "Consulta",
+      sugerencia: "Sugerencia / petición",
+      rsvp: "Sobre mi RSVP",
+      otro: "Otro",
+      general: "General",
+    };
+    const categoryDisplay =
+      categoryLabels[safeCategory] ?? safeCategory ?? "General";
+
+    const messageBlock = safeMessage
+      .split("\n")
+      .map((line) =>
+        line
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;"),
+      )
+      .join("<br>");
+
+    const result = await resend.emails.send({
+      from: "Wedding API <onboarding@resend.dev>",
+      to: emailOwner,
+      ...(replyToHeader ? { replyTo: replyToHeader } : {}),
+      subject: subjectLine,
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header {
+                background-color: #ec4899;
+                color: white;
+                padding: 20px;
+                border-radius: 5px;
+              }
+              .content { margin-top: 20px; line-height: 1.5; }
+              .field-table {
+                border-collapse: collapse;
+                width: 100%;
+                margin-top: 16px;
+              }
+              .field-table td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                vertical-align: top;
+              }
+              .field-table td.label {
+                background-color: #fdf2f5;
+                width: 35%;
+                font-weight: 600;
+                color: #be185d;
+              }
+              .message-box {
+                margin-top: 16px;
+                padding: 16px;
+                border-left: 4px solid #ec4899;
+                background: #fdf2f5;
+                white-space: pre-wrap;
+                line-height: 1.6;
+              }
+              .footer {
+                margin-top: 30px;
+                font-size: 12px;
+                color: #666;
+                border-top: 1px solid #ddd;
+                padding-top: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h2 style="margin:0;">💌 Mensaje desde la web de boda</h2>
+              </div>
+              <div class="content">
+                <p>Has recibido un nuevo mensaje desde el formulario de contacto
+                  público de la invitación.</p>
+
+                <table class="field-table" role="presentation">
+                  <tr>
+                    <td class="label">Nombre</td>
+                    <td>${safeName}</td>
+                  </tr>
+                  ${
+                    safeEmail
+                      ? `<tr>
+                          <td class="label">Email</td>
+                          <td>${safeEmail}</td>
+                        </tr>`
+                      : ""
+                  }
+                  <tr>
+                    <td class="label">Categoría</td>
+                    <td>${categoryDisplay}</td>
+                  </tr>
+                  ${
+                    safeSubject
+                      ? `<tr>
+                          <td class="label">Asunto</td>
+                          <td>${safeSubject}</td>
+                        </tr>`
+                      : ""
+                  }
+                </table>
+
+                <div class="message-box">${messageBlock}</div>
+
+                <p style="margin-top: 24px;">
+                  ${
+                    safeEmail
+                      ? "Podés responder directamente a este email para escribirle al visitante."
+                      : "El visitante no dejó email de contacto. Si necesitás responderle, hacelo desde el panel."
+                  }
+                </p>
+
+                <p style="margin-top: 12px; font-size: 13px; color: #999;">
+                  Tip: si respondés desde tu cliente de correo, el email irá
+                  directamente a la dirección que nos dejó el visitante.
+                </p>
+              </div>
+              <div class="footer">
+                <p>Este mensaje se generó automáticamente desde la web de boda.</p>
+                <p>${new Date().toLocaleString("es-ES")}</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `,
+    });
+
+    console.log("✉️ Contact message email sent to:", emailOwner);
+    return result;
+  } catch (error) {
+    console.error("Error sending contact message email:", error.message);
+    return null;
+  }
+};
+
+/**
  * Envia un código numérico de 6 cifras al propietario para autorizar
  * la eliminación masiva de invitados.
  */
