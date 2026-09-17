@@ -1,4 +1,5 @@
 import db from "../db.js";
+import * as Setting from "./setting.js";
 
 /**
  * Columnas explícitas del cuestionario. Mantener aquí centralizado para
@@ -110,6 +111,14 @@ export const upsert = async (userId, raw) => {
         [...columns.map((k) => data[k]), userId],
       );
     }
+  }
+
+  if (data.estimatedGuests !== undefined && data.estimatedGuests !== null) {
+    await Setting.updateSetting(
+      "total_estimated_guests",
+      String(data.estimatedGuests),
+      userId,
+    );
   }
 
   return await findByUserId(userId);

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import * as User from "../models/user.js";
+import * as Setting from "../models/setting.js";
 import { initUserDefaults } from "../db.js";
 import { logWarn } from "../utils/logger.js";
 
@@ -57,7 +58,7 @@ export const login = async (req, res) => {
 };
 
 export const register = async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, estimatedGuests } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({
@@ -102,6 +103,21 @@ export const register = async (req, res) => {
 
     // Inicializar settings y categorías por defecto
     await initUserDefaults(newUser.id);
+
+    if (
+      estimatedGuests !== undefined &&
+      estimatedGuests !== null &&
+      estimatedGuests !== ""
+    ) {
+      const parsed = parseInt(estimatedGuests, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) {
+        await Setting.updateSetting(
+          "total_estimated_guests",
+          String(parsed),
+          newUser.id,
+        );
+      }
+    }
 
     const token = jwt.sign(
       { id: newUser.id, username: newUser.username, role: newUser.role, slug: newUser.slug },
