@@ -4,6 +4,7 @@ import * as Setting from "../models/setting.js";
 import db, { initUserDefaults } from "../db.js";
 import { logWarn } from "../utils/logger.js";
 import { sendPasswordResetCodeEmail } from "../services/emailService.js";
+import { isValidEmail } from "../utils/validation.js";
 
 export const login = async (req, res) => {
   const { username, password } = req.body;
@@ -257,6 +258,113 @@ export const changePassword = async (req, res) => {
   } catch (error) {
     console.error("changePassword error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * Actualiza campos editables del propio usuario (email por ahora).
+ *
+ * Seguridad: para evitar que un JWT robado modifique el email sin
+ * verificación, exigimos `currentPassword` (igual que `changePassword`).
+ * El email puede establecerse a `null` (vacío) para borrarlo, lo que
+ * impedirá el flujo de recuperación por código en el futuro.
+ */
+export const updateMe = async (req, res) => {
+  const { email, currentPassword } = req.body || {};
+
+  if (typeof email !== "string") {
+    return res.status(400).json({
+      success: false,
+      message: "El email es obligatorio y debe ser una cadena de texto.",
+    });
+  }
+
+  if (!currentPassword || typeof currentPassword !== "string") {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Debes confirmar tu contraseña actual para modificar el email.",
+    });
+  }
+
+  const trimmedEmail = email.trim();
+
+  if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+    return res.status(400).json({
+      success: false,
+      message: "El formato del email no es válido.",
+    });
+  }
+
+  if (trimmedEmail.length > 255) {
+    return res.status(400).json({
+      success: false,
+      message: "El email es demasiado largo (máximo 255 caracteres).",
+    });
+  }
+
+  try {
+    // Re-leemos por username para tener la columna `password` (no incluida
+    // en PUBLIC_USER_COLUMNS).
+    const user = await User.findByUsername(req.user.username);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado.",
+      });
+    }
+
+    const isMatch = await User.comparePassword(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "La contraseña actual es incorrecta.",
+      });
+    }
+
+    const newEmail = trimmedEmail === "" ? null : trimmedEmail;
+    const currentEmail = user.email || null;
+
+    if (currentEmail === newEmail) {
+      return res.json({
+        success: true,
+        message: "El email no ha cambiado.",
+        data: {
+          id: user.id,
+          username: user.username,
+          email: newEmail,
+          role: user.role,
+          slug: user.slug,
+        },
+      });
+    }
+
+    const updatedUser = await User.updateUser(req.user.id, { email: newEmail });
+
+    // Invalidamos cualquier código de reset pendiente: si el email cambió,
+    // un código enviado al email antiguo ya no es válido.
+    await db.run(
+      "UPDATE password_reset_codes SET used = 1 WHERE userId = ? AND used = 0",
+      [user.id],
+    );
+
+    console.log(
+      `✉️ Email actualizado para usuario id=${user.id}: '${currentEmail}' → '${newEmail ?? "(vacío)"}'`,
+    );
+
+    return res.json({
+      success: true,
+      message: newEmail
+        ? "Email actualizado correctamente."
+        : "Email eliminado correctamente.",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("updateMe error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al actualizar el email.",
+    });
   }
 };
 

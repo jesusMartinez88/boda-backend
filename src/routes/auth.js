@@ -50,6 +50,12 @@ router.get(
 // Rutas protegidas
 router.get("/me", authenticateJWT, authController.me);
 router.patch("/me/password", authenticateJWT, authController.changePassword);
+router.patch(
+  "/me",
+  authenticateJWT,
+  resetCodeLimiter,
+  authController.updateMe,
+);
 router.post(
   "/me/request-reset-code",
   authenticateJWT,
