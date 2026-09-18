@@ -417,3 +417,60 @@ export const sendDeleteCodeEmail = async (code) => {
     return null;
   }
 };
+
+/**
+ * Envía un código numérico de 6 cifras al usuario para restablecer su contraseña.
+ */
+export const sendPasswordResetCodeEmail = async ({ to, username, code }) => {
+  if (!emailEnabled) {
+    console.warn("⚠️ Email service disabled. Reset code cannot be sent via email.");
+    return null;
+  }
+
+  const recipient = to || process.env.EMAILOWNER;
+  if (!recipient) {
+    console.warn("⚠️ No recipient email available for password reset code");
+    return null;
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: "BodasOnline <onboarding@resend.dev>",
+      to: recipient,
+      subject: "🔑 Tu código de recuperación de contraseña",
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; background-color: #ffffff; border: 1px solid #f3e8ff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+          <div style="background: linear-gradient(135deg, #ec4899, #be185d); padding: 24px; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">BodasOnline</h1>
+            <p style="margin: 6px 0 0; font-size: 14px; opacity: 0.9;">Recuperación de contraseña</p>
+          </div>
+          <div style="padding: 32px 24px; color: #1f2937;">
+            <p style="margin-top: 0; font-size: 16px;">Hola <strong>${username || "usuario"}</strong>,</p>
+            <p style="font-size: 15px; color: #4b5563; line-height: 1.5;">
+              Hemos recibido una solicitud para restablecer la contraseña de tu cuenta. Utiliza el siguiente código de verificación:
+            </p>
+            <div style="text-align: center; margin: 28px 0;">
+              <div style="display: inline-block; background-color: #fdf2f8; border: 2px dashed #ec4899; border-radius: 12px; padding: 14px 28px;">
+                <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #be185d; font-family: monospace;">${code}</span>
+              </div>
+            </div>
+            <p style="font-size: 13px; color: #6b7280; text-align: center;">
+              ⏳ Este código es de un solo uso y expirará en <strong>15 minutos</strong>.
+            </p>
+            <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 24px 0;" />
+            <p style="font-size: 12px; color: #9ca3af; line-height: 1.4; margin-bottom: 0;">
+              Si no has solicitado este restablecimiento, puedes ignorar este mensaje de forma segura. Tu contraseña actual no cambiará.
+            </p>
+          </div>
+        </div>
+      `,
+    });
+
+    console.log("✉️ Password reset code sent to:", recipient);
+    return result;
+  } catch (error) {
+    console.error("Error sending password reset code email:", error.message);
+    return null;
+  }
+};
+

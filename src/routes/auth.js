@@ -25,6 +25,20 @@ const authLimiter = rateLimit({
   },
 });
 
+// Limitador para solicitud de códigos de restablecimiento: 5 req / 15 min
+const resetCodeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message:
+      "Demasiadas solicitudes de código. Por favor, intenta de nuevo en unos minutos.",
+  },
+});
+
 router.post("/login", authLimiter, authController.login);
 router.post("/register", authLimiter, authController.register);
 router.get(
@@ -36,5 +50,16 @@ router.get(
 // Rutas protegidas
 router.get("/me", authenticateJWT, authController.me);
 router.patch("/me/password", authenticateJWT, authController.changePassword);
+router.post(
+  "/me/request-reset-code",
+  authenticateJWT,
+  resetCodeLimiter,
+  authController.requestResetCode,
+);
+router.post(
+  "/me/reset-password-with-code",
+  authenticateJWT,
+  authController.resetPasswordWithCode,
+);
 
 export default router;

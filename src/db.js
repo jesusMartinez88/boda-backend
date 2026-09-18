@@ -358,6 +358,24 @@ const initializeTables = async () => {
       }
     }
 
+    // Tabla de códigos de restablecimiento de contraseña
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS password_reset_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userId INTEGER NOT NULL,
+        code TEXT NOT NULL,
+        expiresAt DATETIME NOT NULL,
+        used INTEGER DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    await db.run(`
+      CREATE INDEX IF NOT EXISTS idx_password_reset_codes_user
+      ON password_reset_codes(userId, used)
+    `);
+
     // Tabla de finanzas
     await db.run(`
       CREATE TABLE IF NOT EXISTS finances (

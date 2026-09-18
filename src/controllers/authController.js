@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
 import * as User from "../models/user.js";
 import * as Setting from "../models/setting.js";
-import { initUserDefaults } from "../db.js";
+import db, { initUserDefaults } from "../db.js";
 import { logWarn } from "../utils/logger.js";
+import { sendPasswordResetCodeEmail } from "../services/emailService.js";
 
 export const login = async (req, res) => {
   const { username, password } = req.body;
@@ -258,3 +259,160 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
+const maskEmail = (email) => {
+  if (!email || !email.includes("@")) return email || "";
+  const [local, domain] = email.split("@");
+  if (local.length <= 2) return `${local[0]}***@${domain}`;
+  return `${local[0]}${local[1]}***${local[local.length - 1]}@${domain}`;
+};
+
+export const requestResetCode = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado",
+      });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Tu cuenta no tiene un correo electrónico configurado para recibir el código.",
+      });
+    }
+
+    // Invalida códigos previos pendientes del usuario
+    await db.run(
+      "UPDATE password_reset_codes SET used = 1 WHERE userId = ? AND used = 0",
+      [user.id],
+    );
+
+    // Generar código de 6 dígitos numéricos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    await db.run(
+      "INSERT INTO password_reset_codes (userId, code, expiresAt, used) VALUES (?, ?, ?, 0)",
+      [user.id, code, expiresAt],
+    );
+
+    console.log(
+      `🔑 Código de restablecimiento generado para ${user.username} (${user.email}): ${code}`,
+    );
+
+    // Envío asíncrono del correo
+    await sendPasswordResetCodeEmail({
+      to: user.email,
+      username: user.username,
+      code,
+    });
+
+    const responsePayload = {
+      success: true,
+      message: `Código de verificación enviado a ${maskEmail(user.email)}.`,
+    };
+
+    if (process.env.NODE_ENV !== "production") {
+      responsePayload.code = code;
+    }
+
+    return res.json(responsePayload);
+  } catch (error) {
+    console.error("requestResetCode error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error al generar el código de recuperación",
+    });
+  }
+};
+
+export const resetPasswordWithCode = async (req, res) => {
+  const { code, newPassword } = req.body;
+
+  if (!code || typeof code !== "string" || !code.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "El código de verificación es obligatorio",
+    });
+  }
+
+  if (
+    !newPassword ||
+    typeof newPassword !== "string" ||
+    newPassword.length < 8
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "La nueva contraseña debe tener al menos 8 caracteres",
+    });
+  }
+
+  const cleanCode = code.trim();
+
+  try {
+    const resetRecord = await db.get(
+      `SELECT * FROM password_reset_codes 
+       WHERE userId = ? AND used = 0 
+       ORDER BY id DESC LIMIT 1`,
+      [req.user.id],
+    );
+
+    if (!resetRecord) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No hay ninguna solicitud activa. Solicita un nuevo código.",
+      });
+    }
+
+    const now = new Date();
+    const expiryDate = new Date(resetRecord.expiresAt);
+
+    if (now > expiryDate) {
+      await db.run(
+        "UPDATE password_reset_codes SET used = 1 WHERE id = ?",
+        [resetRecord.id],
+      );
+      return res.status(400).json({
+        success: false,
+        message: "El código ha expirado. Por favor, solicita uno nuevo.",
+      });
+    }
+
+    if (resetRecord.code !== cleanCode) {
+      return res.status(400).json({
+        success: false,
+        message: "El código de verificación es incorrecto.",
+      });
+    }
+
+    // Código válido: marcar como usado
+    await db.run(
+      "UPDATE password_reset_codes SET used = 1 WHERE id = ?",
+      [resetRecord.id],
+    );
+
+    // Actualizar la contraseña del usuario
+    await User.updatePassword(req.user.id, newPassword);
+
+    console.log(
+      `✅ Contraseña restablecida con éxito para usuario id=${req.user.id}`,
+    );
+
+    return res.json({
+      success: true,
+      message: "Contraseña actualizada correctamente.",
+    });
+  } catch (error) {
+    console.error("resetPasswordWithCode error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al restablecer la contraseña",
+    });
+  }
+};
+
