@@ -305,17 +305,15 @@ const initializeTables = async () => {
       }
     }
 
-    // Migración: columnas admin-only (paidAt, plan, invitationCompletedAt, lastLoginAt, notes)
+    // Migración: columnas admin-only (paidAt, invitationCompletedAt, lastLoginAt, notes)
+    // Nota: la columna `plan` quedó obsoleta y ya no se crea; en BDs creadas
+    // antes de este cambio sigue existiendo pero ningún endpoint la usa.
     try {
       const usersInfo = await db.all("PRAGMA table_info(users)");
       const colsByName = new Set(usersInfo.map((c) => c.name));
       if (!colsByName.has("paidAt")) {
         await db.run(`ALTER TABLE users ADD COLUMN paidAt DATETIME`);
         console.log("✅ Column paidAt added to users table");
-      }
-      if (!colsByName.has("plan")) {
-        await db.run(`ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'`);
-        console.log("✅ Column plan added to users table");
       }
       if (!colsByName.has("invitationCompletedAt")) {
         await db.run(`ALTER TABLE users ADD COLUMN invitationCompletedAt DATETIME`);
@@ -810,6 +808,15 @@ const initializeTables = async () => {
           hasCountdown INTEGER DEFAULT 0,
           hasBusService INTEGER DEFAULT 0,
           hasHotelService INTEGER DEFAULT 0,
+          hasOurStory INTEGER DEFAULT 0,
+          hasGallery INTEGER DEFAULT 0,
+          hasAddToCalendar INTEGER DEFAULT 0,
+          hasVenueMap INTEGER DEFAULT 0,
+          hasGiftRegistry INTEGER DEFAULT 0,
+          giftBankAccount TEXT,
+          contactCouple INTEGER DEFAULT 0,
+          contactGroomPhone TEXT,
+          contactBridePhone TEXT,
           additionalServices TEXT,
           notes TEXT,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -830,6 +837,15 @@ const initializeTables = async () => {
         ["hasCountdown", "INTEGER DEFAULT 0"],
         ["hasBusService", "INTEGER DEFAULT 0"],
         ["hasHotelService", "INTEGER DEFAULT 0"],
+        ["hasOurStory", "INTEGER DEFAULT 0"],
+        ["hasGallery", "INTEGER DEFAULT 0"],
+        ["hasAddToCalendar", "INTEGER DEFAULT 0"],
+        ["hasVenueMap", "INTEGER DEFAULT 0"],
+        ["hasGiftRegistry", "INTEGER DEFAULT 0"],
+        ["giftBankAccount", "TEXT"],
+        ["contactCouple", "INTEGER DEFAULT 0"],
+        ["contactGroomPhone", "TEXT"],
+        ["contactBridePhone", "TEXT"],
         ["additionalServices", "TEXT"],
         ["notes", "TEXT"],
       ];
@@ -839,8 +855,77 @@ const initializeTables = async () => {
           console.log(`✅ Column ${name} added to landing_questionnaire`);
         }
       }
+
+      // Migración de datos: copiar valores de columnas renombradas si existen.
+      // hasCalendarEvent → hasAddToCalendar
+      if (lqCols.has("hasCalendarEvent")) {
+        await db.run(`UPDATE landing_questionnaire SET hasAddToCalendar = hasCalendarEvent WHERE hasCalendarEvent IS NOT NULL AND hasAddToCalendar = 0`);
+        console.log("✅ Migrated data: hasCalendarEvent → hasAddToCalendar");
+      }
+      // hasVenueLocation → hasVenueMap
+      if (lqCols.has("hasVenueLocation")) {
+        await db.run(`UPDATE landing_questionnaire SET hasVenueMap = hasVenueLocation WHERE hasVenueLocation IS NOT NULL AND hasVenueMap = 0`);
+        console.log("✅ Migrated data: hasVenueLocation → hasVenueMap");
+      }
+      // hasContactBrideGroom → contactCouple
+      if (lqCols.has("hasContactBrideGroom")) {
+        await db.run(`UPDATE landing_questionnaire SET contactCouple = hasContactBrideGroom WHERE hasContactBrideGroom IS NOT NULL AND contactCouple = 0`);
+        console.log("✅ Migrated data: hasContactBrideGroom → contactCouple");
+      }
+      // contactBrideGroomPhone → contactGroomPhone
+      if (lqCols.has("contactBrideGroomPhone")) {
+        await db.run(`UPDATE landing_questionnaire SET contactGroomPhone = contactBrideGroomPhone WHERE contactBrideGroomPhone IS NOT NULL AND contactGroomPhone IS NULL`);
+        console.log("✅ Migrated data: contactBrideGroomPhone → contactGroomPhone");
+      }
     } catch (err) {
       console.error("Migration warning (landing_questionnaire):", err.message);
+    }
+
+    // Tabla de visitas únicas globales por IP — conteo de visitas a la app.
+    // No está vinculada a ningún usuario: cualquier petición a /health desde
+    // el frontend cuenta como una visita, deduplicada por IP en 24 h.
+    try {
+      await db.run(`
+        CREATE TABLE IF NOT EXISTS page_visits (
+          id        INTEGER PRIMARY KEY AUTOINCREMENT,
+          ip        TEXT NOT NULL,
+          userAgent TEXT,
+          visitedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      // Índice para la deduplicación en 24 h (WHERE ip = ? AND visitedAt >= ...)
+      await db.run(
+        `CREATE INDEX IF NOT EXISTS idx_page_visits_ip ON page_visits(ip)`,
+      );
+      await db.run(
+        `CREATE INDEX IF NOT EXISTS idx_page_visits_visited_at ON page_visits(visitedAt)`,
+      );
+
+      // Migración: si la tabla ya existía con la columna 'slug' del intento
+      // anterior, la eliminamos recreando la tabla sin ella.
+      const lqCols = await db.all("PRAGMA table_info(page_visits)");
+      const hasSlug = lqCols.some((c) => c.name === "slug");
+      if (hasSlug) {
+        await db.run(`
+          CREATE TABLE IF NOT EXISTS page_visits_new (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip        TEXT NOT NULL,
+            userAgent TEXT,
+            visitedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        await db.run(`
+          INSERT INTO page_visits_new (ip, userAgent, visitedAt)
+          SELECT ip, userAgent, visitedAt FROM page_visits
+        `);
+        await db.run(`DROP TABLE page_visits`);
+        await db.run(`ALTER TABLE page_visits_new RENAME TO page_visits`);
+        await db.run(`CREATE INDEX IF NOT EXISTS idx_page_visits_ip ON page_visits(ip)`);
+        await db.run(`CREATE INDEX IF NOT EXISTS idx_page_visits_visited_at ON page_visits(visitedAt)`);
+        console.log("✅ page_visits: migrated to global schema (slug column removed)");
+      }
+    } catch (err) {
+      console.error("Migration warning (page_visits):", err.message);
     }
 
     console.log(

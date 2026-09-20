@@ -1,6 +1,7 @@
 import "./env.js";
 import express from "express";
 import cors from "cors";
+import * as Visit from "./models/visit.js";
 import guestRoutes from "./routes/guests.js";
 import statsRoutes from "./routes/stats.js";
 import authRoutes from "./routes/auth.js";
@@ -16,6 +17,7 @@ import musicPlaylistRoutes from "./routes/music-playlist.routes.js";
 import userRoutes from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
 import landingQuestionnaireRoutes from "./routes/landingQuestionnaire.js";
+import invitationMediaRoutes from "./routes/invitation-media.js";
 import { initializeEmailService } from "./services/emailService.js";
 import { initializeWhatsAppService } from "./services/whatsappService.js";
 import helmet from "helmet";
@@ -105,9 +107,26 @@ app.set("trust proxy", 1);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use("/media/fotos", (req, res, next) => {
+  // Helmet sets Cross-Origin-Resource-Policy: same-origin by default, which blocks
+  // cross-origin image loads (ERR_BLOCKED_BY_RESPONSE.NotSameOrigin).
+  // Override it to allow the frontend (different port/origin) to load these assets.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+  next();
+}, express.static(process.env.INVITATION_MEDIA_DIR || "assets/fotos", { index: false, fallthrough: false, maxAge: 0 }));
 app.use("/api/", generalLimiter);
 
 app.get("/health", (req, res) => {
+  // Trackear visita única por IP: fire-and-forget, nunca bloquea la respuesta.
+  // Solo registra si el request viene con el header x-app-visit que el frontend
+  // envía al arrancar, evitando que pings de monitorización externos cuenten.
+  if (req.headers["x-app-visit"] === "1") {
+    const ip = req.ip ?? "unknown";
+    const ua = req.headers["user-agent"] ?? null;
+    Visit.track(ip, ua).catch((err) => {
+      console.warn("[health] visit track failed:", err?.message);
+    });
+  }
   res.json({ status: "OK", message: "Wedding API is running" });
 });
 
@@ -126,6 +145,7 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/music-playlist", musicPlaylistRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/landing-questionnaire", landingQuestionnaireRoutes);
+app.use("/api/invitation-media", invitationMediaRoutes);
 app.use("/api/admin", adminRoutes);
 
 app.use((req, res) => {

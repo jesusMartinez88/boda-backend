@@ -8,7 +8,11 @@ import * as Setting from "./setting.js";
  */
 const PUBLIC_COLUMNS =
   "id, userId, weddingDate, estimatedGuests, predominantColor, " +
-  "hasCountdown, hasBusService, hasHotelService, additionalServices, notes, " +
+  "hasCountdown, hasBusService, hasHotelService, " +
+  "hasOurStory, hasGallery, hasAddToCalendar, hasVenueMap, hasGiftRegistry, " +
+  "giftBankAccount, " +
+  "contactCouple, contactGroomPhone, contactBridePhone, " +
+  "additionalServices, notes, " +
   "createdAt, updatedAt";
 
 /**
@@ -20,7 +24,17 @@ const PUBLIC_COLUMNS =
  * Campos no listados se ignoran para evitar mass-assignment (igual que
  * en `models/user.js`).
  */
-const BOOLEAN_FIELDS = new Set(["hasCountdown", "hasBusService", "hasHotelService"]);
+const BOOLEAN_FIELDS = new Set([
+  "hasCountdown",
+  "hasBusService",
+  "hasHotelService",
+  "hasOurStory",
+  "hasGallery",
+  "hasAddToCalendar",
+  "hasVenueMap",
+  "hasGiftRegistry",
+  "contactCouple",
+]);
 
 const sanitizeQuestionnaire = (raw) => {
   if (!raw || typeof raw !== "object") return {};
@@ -34,6 +48,15 @@ const sanitizeQuestionnaire = (raw) => {
         "hasCountdown",
         "hasBusService",
         "hasHotelService",
+        "hasOurStory",
+        "hasGallery",
+        "hasAddToCalendar",
+        "hasVenueMap",
+        "hasGiftRegistry",
+        "giftBankAccount",
+        "contactCouple",
+        "contactGroomPhone",
+        "contactBridePhone",
         "additionalServices",
         "notes",
       ].includes(key)
@@ -50,6 +73,26 @@ const sanitizeQuestionnaire = (raw) => {
         value === "yes"
           ? 1
           : 0;
+    } else if (key === "giftBankAccount") {
+      if (value === null || value === "") {
+        out[key] = null;
+      } else {
+        out[key] = String(value).trim() || null;
+      }
+    } else if (key === "contactGroomPhone" || key === "contactBridePhone") {
+      if (value === null || value === "") {
+        out[key] = null;
+      } else {
+        const phone = String(value).trim();
+        // Formato básico: dígitos, espacios, +, -, paréntesis. Max 20 chars.
+        if (!/^[+\d][\d\s\-().]{0,18}[\d)]$/.test(phone)) {
+          throw Object.assign(
+            new Error(`${key} has an invalid format`),
+            { status: 422, field: key },
+          );
+        }
+        out[key] = phone;
+      }
     } else if (value === null || value === "") {
       // Permite "limpiar" campos enviando null/string vacío.
       out[key] = null;

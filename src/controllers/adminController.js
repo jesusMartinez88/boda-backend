@@ -1,5 +1,6 @@
 import db from "../db.js";
 import * as User from "../models/user.js";
+import * as Visit from "../models/visit.js";
 import { logError } from "../utils/logger.js";
 
 const PROTECTED_ADMIN_USERNAME = "admin";
@@ -19,7 +20,7 @@ export const listUsersWithStats = async (req, res) => {
   try {
     const rows = await db.all(`
       SELECT
-        u.id, u.username, u.email, u.role, u.slug, u.plan, u.paidAt,
+        u.id, u.username, u.email, u.role, u.slug, u.paidAt,
         u.invitationCompletedAt, u.lastLoginAt, u.createdAt, u.notes,
         (SELECT COUNT(*) FROM guests g WHERE g.userId = u.id) AS guestCount,
         (SELECT COUNT(*) FROM contacts c WHERE c.userId = u.id) AS contactCount,
@@ -70,18 +71,15 @@ export const listUsersWithStats = async (req, res) => {
  *   - Cambiar username/role (eso tiene su propio endpoint)
  *   - Cambiar password (usar /api/auth/me/password)
  *
- * Campos permitidos: email, plan, paidAt, invitationCompletedAt, notes.
+ * Campos permitidos: email, paidAt, invitationCompletedAt, notes.
  * Para "desmarcar" un campo basta con enviar `null` o string vacío.
  */
 const ALLOWED_PATCH_FIELDS = new Set([
   "email",
-  "plan",
   "paidAt",
   "invitationCompletedAt",
   "notes",
 ]);
-
-const isValidPlan = (plan) => plan === "free" || plan === "premium";
 
 const normalizeDateOrNull = (value) => {
   if (value === null || value === "" || value === undefined) {
@@ -118,14 +116,6 @@ export const updateUser = async (req, res) => {
     for (const [key, value] of Object.entries(req.body || {})) {
       if (!ALLOWED_PATCH_FIELDS.has(key)) continue;
       patch[key] = value;
-    }
-
-    if ("plan" in patch && patch.plan !== null && patch.plan !== "") {
-      if (!isValidPlan(patch.plan)) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid plan value" });
-      }
     }
 
     if ("email" in patch) {
@@ -190,5 +180,19 @@ export const deleteUser = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "Internal server error" });
+  }
+};
+
+/**
+ * GET /api/admin/stats/visits
+ * Estadísticas globales de visitas únicas a la app (por IP).
+ */
+export const getVisitStats = async (req, res) => {
+  try {
+    const stats = await Visit.getStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    logError("Error fetching visit stats", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
