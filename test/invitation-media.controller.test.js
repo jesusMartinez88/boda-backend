@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,6 +48,18 @@ test("cover uploads are decoded and stored exclusively as WebP", async () => {
   assert.equal(res.body.data.url, "/media/fotos/test-couple/cover.webp");
   const stored = await readFile(join(mediaRoot, "test-couple", "cover.webp"));
   assert.equal((await sharp(stored).metadata()).format, "webp");
+
+  const replacement = await sharp({
+    create: { width: 20, height: 20, channels: 3, background: "#3366cc" },
+  })
+    .png()
+    .toBuffer();
+  await controller.uploadCover(
+    { userContext: { slug: "test-couple" }, file: { buffer: replacement } },
+    createResponse(),
+    failNext,
+  );
+  assert.deepEqual(await readdir(join(mediaRoot, "test-couple")), ["cover.webp"]);
 });
 
 test("rejects SVG data instead of persisting the original file", async () => {

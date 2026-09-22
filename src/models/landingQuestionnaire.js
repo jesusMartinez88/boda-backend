@@ -9,7 +9,7 @@ import * as Setting from "./setting.js";
 const PUBLIC_COLUMNS =
   "id, userId, weddingDate, estimatedGuests, predominantColor, " +
   "hasCountdown, hasBusService, hasHotelService, " +
-  "hasOurStory, hasGallery, hasAddToCalendar, hasVenueMap, hasGiftRegistry, " +
+  "hasCoverPhoto, hasOurStory, hasGallery, hasAddToCalendar, hasVenueMap, hasGiftRegistry, " +
   "giftBankAccount, " +
   "hasBackgroundMusic, backgroundMusicSong, " +
   "ourStoryEntries, ourStoryCaptions, " +
@@ -30,6 +30,7 @@ const BOOLEAN_FIELDS = new Set([
   "hasCountdown",
   "hasBusService",
   "hasHotelService",
+  "hasCoverPhoto",
   "hasOurStory",
   "hasGallery",
   "hasAddToCalendar",
@@ -51,6 +52,7 @@ const sanitizeQuestionnaire = (raw) => {
         "hasCountdown",
         "hasBusService",
         "hasHotelService",
+        "hasCoverPhoto",
         "hasOurStory",
         "hasGallery",
         "hasAddToCalendar",
