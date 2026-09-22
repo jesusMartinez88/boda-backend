@@ -11,6 +11,8 @@ const PUBLIC_COLUMNS =
   "hasCountdown, hasBusService, hasHotelService, " +
   "hasOurStory, hasGallery, hasAddToCalendar, hasVenueMap, hasGiftRegistry, " +
   "giftBankAccount, " +
+  "hasBackgroundMusic, backgroundMusicSong, " +
+  "ourStoryEntries, ourStoryCaptions, " +
   "contactCouple, contactGroomPhone, contactBridePhone, " +
   "additionalServices, notes, " +
   "createdAt, updatedAt";
@@ -33,6 +35,7 @@ const BOOLEAN_FIELDS = new Set([
   "hasAddToCalendar",
   "hasVenueMap",
   "hasGiftRegistry",
+  "hasBackgroundMusic",
   "contactCouple",
 ]);
 
@@ -54,6 +57,9 @@ const sanitizeQuestionnaire = (raw) => {
         "hasVenueMap",
         "hasGiftRegistry",
         "giftBankAccount",
+        "hasBackgroundMusic",
+        "backgroundMusicSong",
+        "ourStoryEntries",
         "contactCouple",
         "contactGroomPhone",
         "contactBridePhone",
@@ -73,12 +79,48 @@ const sanitizeQuestionnaire = (raw) => {
         value === "yes"
           ? 1
           : 0;
-    } else if (key === "giftBankAccount") {
+    } else if (key === "giftBankAccount" || key === "backgroundMusicSong") {
       if (value === null || value === "") {
         out[key] = null;
       } else {
         out[key] = String(value).trim() || null;
       }
+    } else if (key === "ourStoryEntries") {
+      // Array de entries {url, caption} para "Nuestra historia". Cada
+      // entry corresponde a una foto ya subida al media server y a su
+      // caption asociado. Aceptamos array u objeto ya serializado a JSON.
+      // Descartamos entries sin url; limpiamos el caption (trim).
+      if (value === null || value === "") {
+        out[key] = null;
+        continue;
+      }
+      let arr;
+      if (Array.isArray(value)) {
+        arr = value;
+      } else if (typeof value === "string") {
+        try {
+          arr = JSON.parse(value);
+        } catch {
+          arr = [];
+        }
+      } else {
+        arr = [];
+      }
+      if (!Array.isArray(arr)) {
+        out[key] = null;
+        continue;
+      }
+      const cleaned = arr
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const url = typeof entry.url === "string" ? entry.url.trim() : "";
+          const caption =
+            typeof entry.caption === "string" ? entry.caption.trim() : "";
+          if (!url) return null;
+          return { url, caption };
+        })
+        .filter((e) => e !== null);
+      out[key] = cleaned.length > 0 ? JSON.stringify(cleaned) : null;
     } else if (key === "contactGroomPhone" || key === "contactBridePhone") {
       if (value === null || value === "") {
         out[key] = null;
